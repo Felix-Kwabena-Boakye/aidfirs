@@ -1,0 +1,16 @@
+django>=4.2
+djangorestframework
+djangorestframework-simplejwt
+celery
+redis
+reportlab
+django-cors-headers
+django-filter
+pymongo>=4.0
+python-dotenv
+certifi
+anthropic
+pytest
+pytest-django
+requests
+psutil
