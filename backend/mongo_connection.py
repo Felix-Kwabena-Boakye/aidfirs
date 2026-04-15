@@ -1,5 +1,3 @@
-# mongo_connection.py
-
 from pymongo import MongoClient, errors
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -19,7 +17,7 @@ logger = logging.getLogger("MongoDB")
 load_dotenv()
 
 # You can temporarily set the URI here for testing (optional)
-TEMP_MONGO_URI = "mongodb+srv://forensics_admin:StrongPassword123!@ai-forensics-cluster.osj874c.mongodb.net/?appName=ai-forensics-cluster"
+TEMP_MONGO_URI = "mongodb://forensics_admin:StrongPassword123!@ai-forensics-cluster-shard-00-00.osj874c.mongodb.net:27017/ai_digital_forensics?tls=true&amp;authSource=admin"
 
 MONGO_URI = os.getenv("MONGO_URI") or TEMP_MONGO_URI
 DB_NAME = os.getenv("MONGO_DB_NAME", "ai_digital_forensics")
@@ -35,9 +33,10 @@ try:
         MONGO_URI,
         tls=True,
         tlsCAFile=certifi.where(),
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=5000,
-        socketTimeoutMS=5000,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=30000,
+        localThresholdMS=1000,
         maxPoolSize=50,
         retryWrites=True
     )
@@ -229,3 +228,4 @@ try:
     setup_indexes()
 except Exception as e:
     logger.warning(f"Index setup note: {e}")
+

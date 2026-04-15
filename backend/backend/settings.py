@@ -54,8 +54,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://forensics_admin:StrongPassword123!@ai-forensics-cluster.osj874c.mongodb.net/?appName=ai-forensics-cluster")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "ai_digital_forensics")
+# MONGO settings loaded from mongo_connection.py / .env
+# MONGO_URI = os.getenv("MONGO_URI")
+# MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "ai_digital_forensics")
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 STATIC_URL = 'static/'
