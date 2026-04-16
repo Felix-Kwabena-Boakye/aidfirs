@@ -38,22 +38,11 @@ export default function Dashboard() {
         // Generate AI suggestions based on data
         generateAISuggestions(casesRes.data, evidenceRes.data, analysesRes.data);
       } catch (err) {
-        console.error('Dashboard fetch error:', err);
-        let errorMessage = 'Failed to load dashboard data';
-
-        if (err.response) {
-          if (err.response.status === 401 || err.response.status === 403) {
-            errorMessage = 'Session expired. Please login again.';
-            setTimeout(() => window.location.href = '/', 2000);
-          } else {
-            errorMessage = `API Error (${err.response.status}): ${err.response.data?.error || err.message}`;
-          }
-        } else if (err.request) {
-          errorMessage = 'Network Error: Cannot connect to backend server';
-        } else {
-          errorMessage = `Error: ${err.message}`;
+        toast.error('Failed to load dashboard data: ' + (err.response?.data?.error || err.message));
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          toast.error('Session expired. Please login again.');
+          setTimeout(() => window.location.href = '/', 2000);
         }
-        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -187,16 +176,7 @@ export default function Dashboard() {
     );
   }
 
-  if (error) {
-    return (
-      <section className="space-y-8">
-        <header>
-          <h1 className="text-3xl font-bold">Digital Forensics Dashboard</h1>
-          <p className="text-red-400 mt-1">{error}</p>
-        </header>
-      </section>
-    );
-  }
+  // Error handled by toast
 
   const toggleDropdown = (dropdown) => {
     setOpenDropdown(openDropdown === dropdown ? null : dropdown);

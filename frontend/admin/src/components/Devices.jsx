@@ -20,8 +20,7 @@ export default function Devices() {
       setScanning(response.data.scanning || false)
       setLastRefresh(new Date())
     } catch (err) {
-      setError('Failed to fetch devices. Ensure the backend server is running.')
-      console.error(err)
+      toast.error('Failed to fetch devices. Ensure the backend server is running.')
     } finally {
       setLoading(false)
     }
@@ -32,20 +31,22 @@ export default function Devices() {
       await api.post('/devices/scan/')
       setScanning(true)
     } catch (err) {
-      console.error('Failed to start scanning:', err)
+      toast.error('Failed to start scanning')
     }
   }
 
   const stopScanning = async () => {
+
     try {
       await api.delete('/devices/scan/')
       setScanning(false)
     } catch (err) {
-      console.error('Failed to stop scanning:', err)
+      toast.error('Failed to stop scanning')
     }
   }
 
   const handleExamine = async (device) => {
+
     setLoading(true)
     try {
       // 1. Automatically create a new "AI-Powered" case for this device
@@ -60,8 +61,8 @@ export default function Devices() {
         case_type: 'Digital Forensics'
       }
 
-      console.log('Generating AI-powered case...', caseData)
       const caseResponse = await casesAPI.createCase(caseData)
+
       const newCaseId = caseResponse.data._id
 
       // 2. Add device as evidence to the new case
@@ -75,8 +76,8 @@ export default function Devices() {
         status: 'collected'
       }
 
-      console.log('Linking evidence...', evidenceData)
       const evidenceResponse = await evidenceAPI.uploadEvidence(evidenceData)
+
       const newEvidenceId = evidenceResponse.data._id
 
       // 3. Set as current case and notify application
@@ -86,8 +87,7 @@ export default function Devices() {
       // 4. Redirect to evidence page with "auto_ingest" to trigger the full chain
       navigate(`/evidence?auto_ingest=${newEvidenceId}`)
     } catch (err) {
-      console.error('Failed to start automated examination:', err)
-      alert('Failed to start examination: ' + (err.response?.data?.error || err.message))
+      toast.error('Failed to start examination: ' + (err.response?.data?.error || err.message))
     } finally {
       setLoading(false)
     }
@@ -180,11 +180,7 @@ export default function Devices() {
         )}
 
         {/* Error */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-900/40 border border-red-700 rounded-lg">
-            <p className="text-red-300 text-sm">{error}</p>
-          </div>
-        )}
+        {/* Error handled by toast */}
 
         {/* Loading spinner */}
         {loading && devices.length === 0 ? (

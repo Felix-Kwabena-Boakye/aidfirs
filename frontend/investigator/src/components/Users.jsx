@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+// Users.jsx removed as unused in investigator App.jsx
+
 import { usersAPI } from '../api';
 import { Shield, ShieldAlert, CheckCircle, XCircle, UserPlus } from 'lucide-react';
 
-export default function Users() {
+export default function Users() { // REMOVED: Not used in investigator
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');

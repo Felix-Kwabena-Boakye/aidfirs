@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usersAPI } from '../api';
 import { Shield, ShieldAlert, CheckCircle, XCircle, UserPlus } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function Users() {
     const [users, setUsers] = useState([]);
@@ -23,8 +24,7 @@ export default function Users() {
             setUsers(response.data);
             setError('');
         } catch (err) {
-            console.error('Error fetching users:', err);
-            setError('Failed to load users. You may not have permission.');
+            toast.error('Failed to load users. You may not have permission.');
         } finally {
             setLoading(false);
         }
@@ -36,8 +36,7 @@ export default function Users() {
             // Refresh the users list
             fetchUsers();
         } catch (err) {
-            console.error('Error activating user:', err);
-            alert('Failed to activate user. Please try again.');
+            toast.error('Failed to activate user. Please try again.');
         }
     };
 
@@ -48,8 +47,7 @@ export default function Users() {
                 // Refresh the users list
                 fetchUsers();
             } catch (err) {
-                console.error('Error deactivating user:', err);
-                alert('Failed to deactivate user. Please try again.');
+                toast.error('Failed to deactivate user. Please try again.');
             }
         }
     };
@@ -62,13 +60,7 @@ export default function Users() {
         );
     }
 
-    if (error) {
-        return (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 m-6">
-                <p className="text-red-700">{error}</p>
-            </div>
-        );
-    }
+    // Error handled by toast
 
     const pendingUsers = users.filter(user => !user.is_active);
     const activeUsers = users.filter(user => user.is_active);

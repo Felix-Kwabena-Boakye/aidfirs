@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, UserPlus, LogIn } from 'lucide-react'
 import { authAPI } from '../api'
+import { toast } from 'sonner'
+
 
 // Main login component for user authentication
 export default function Login() {
@@ -37,9 +39,10 @@ export default function Login() {
           last_name: lastName,
           role
         })
-        setSuccess('Registration successful! Your account is currently pending Admin approval to maintain security. You will be able to log in once an administrator activates your account.')
+        toast.success('Registration successful! Your account is currently pending Admin approval to maintain security. You will be able to log in once an administrator activates your account.')
         // Keep them on the registration tab to see the long message
         setPassword('')
+
       } else {
         // Handle login
         const response = await authAPI.login({ username, password })
@@ -49,11 +52,12 @@ localStorage.setItem('user', JSON.stringify(response.data.user))\n        const 
       }
     } catch (err) {
       const errorMessage = err.response?.data?.detail || err.response?.data?.error || err.response?.data?.message || 'An error occurred';
-      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
+
 
   // Google OAuth login
   const handleGoogleLogin = async () => {

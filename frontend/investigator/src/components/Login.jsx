@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, AlertCircle, UserPlus, LogIn } from 'lucide-react'
 import { authAPI } from '../api'
+import { toast } from 'sonner'
+
 
 // Main login component for user authentication
 export default function Login() {
