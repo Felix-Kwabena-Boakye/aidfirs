@@ -13,24 +13,14 @@ import hashlib
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
+from .signatures import SIGNATURES
+
 
 class MetadataRecovery:
     """
     Handles recovery of deleted metadata from disk images and physical drives.
     """
     
-    # File signature patterns for common file types
-    FILE_SIGNATURES = {
-        'jpg': [b'\xFF\xD8\xFF\xE0', b'\xFF\xD8\xFF\xE1', b'\xFF\xD8\xFF\xDB'],
-        'png': [b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'],
-        'gif': [b'\x47\x49\x46\x38\x37\x61', b'\x47\x49\x46\x38\x39\x61'],
-        'pdf': [b'\x25\x50\x44\x46'],
-        'doc': [b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'],
-        'zip': [b'\x50\x4B\x03\x04', b'\x50\x4B\x05\x06', b'\x50\x4B\x07\x08'],
-        'exe': [b'\x4D\x5A'],
-        'mp3': [b'\xFF\xFB', b'\xFF\xF3', b'\xFF\xF2', b'ID3'],
-        'mp4': [b'\x00\x00\x00\x18ftyp', b'\x00\x00\x00\x1Cftyp'],
-    }
     
     def __init__(self):
         self.recovered_files: List[Dict] = []
@@ -49,8 +39,13 @@ class MetadataRecovery:
         self.recovered_files = []
         
         if not os.path.exists(image_path):
-            # Return sample data for testing
-            return self._generate_sample_metadata()
+            return []
+            
+        if os.path.isdir(image_path):
+            return self._scan_directory(image_path)
+        
+        if not os.path.isfile(image_path):
+            return []
         
         try:
             with open(image_path, 'rb') as f:
@@ -81,7 +76,8 @@ class MetadataRecovery:
             if not chunk:
                 break
                 
-            for file_type, signatures in self.FILE_SIGNATURES.items():
+            for file_type, sig_info in SIGNATURES.items():
+                signatures = sig_info['header']
                 for sig in signatures:
                     pos = chunk.find(sig)
                     if pos != -1:
@@ -241,7 +237,28 @@ class MetadataRecovery:
         recovered = []
         
         if not os.path.exists(image_path):
-            return self._generate_sample_metadata()
+            return []
+            
+        if os.path.isdir(image_path):
+            try:
+                from forensic_engine.windows_recovery import scan_recycle_bin
+                recycle_entries = scan_recycle_bin(image_path)
+                for entry in recycle_entries:
+                    recovered.append({
+                        'type': 'deleted_file',
+                        'filename': entry.get('original_name'),
+                        'path': entry.get('recycle_path'),
+                        'size': entry.get('size'),
+                        'deleted_at': entry.get('deleted_at'),
+                        'hash_md5': entry.get('md5'),
+                        'status': 'deleted'
+                    })
+            except Exception as e:
+                print(f"Error scanning Recycle Bin: {e}")
+            return recovered
+            
+        if not os.path.isfile(image_path):
+            return []
             
         try:
             with open(image_path, 'rb') as f:
@@ -307,61 +324,58 @@ class MetadataRecovery:
         except Exception as e:
             return {'error': str(e)}
             
-    def _generate_sample_metadata(self) -> List[Dict]:
-        """Generate sample metadata for testing."""
-        return [
-            {
-                'type': 'deleted_file',
-                'filename': 'document.docx',
-                'path': 'C:\\Users\\Admin\\Documents\\confidential.docx',
-                'size': 15360,
-                'deleted_at': '2024-01-15T14:32:00Z',
-                'created': '2024-01-10T09:15:00Z',
-                'modified': '2024-01-15T14:30:00Z',
-                'accessed': '2024-01-15T14:31:00Z',
-                'hash_md5': 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6',
-                'hash_sha256': 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
-            },
-            {
-                'type': 'deleted_file',
-                'filename': 'report.pdf',
-                'path': 'D:\\Evidence\\financial_report.pdf',
-                'size': 524288,
-                'deleted_at': '2024-01-20T08:45:00Z',
-                'created': '2024-01-18T11:20:00Z',
-                'modified': '2024-01-20T08:40:00Z',
-                'accessed': '2024-01-20T08:44:00Z',
-                'hash_md5': 'b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7',
-                'hash_sha256': 'bcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'
-            },
-            {
-                'type': 'deleted_file',
-                'filename': 'image.jpg',
-                'path': 'E:\\Photos\\evidence.jpg',
-                'size': 2097152,
-                'deleted_at': '2024-01-22T16:20:00Z',
-                'created': '2024-01-22T15:10:00Z',
-                'modified': '2024-01-22T16:15:00Z',
-                'accessed': '2024-01-22T16:19:00Z',
-                'hash_md5': 'c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8',
-                'hash_sha256': 'cdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc'
-            },
-            {
-                'type': 'ntfs_mft_entry',
-                'signature': '454c4601',
-                'sequence_number': 1,
-                'hard_links': 1,
-                'attributes': ['$STANDARD_INFORMATION', '$FILE_NAME', '$DATA'],
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            },
-            {
-                'type': 'file_signature',
-                'file_type': 'doc',
-                'offset': 0,
-                'signature': 'd0cf11e0a1b11ae1',
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            }
-        ]
+    def _scan_directory(self, dir_path: str) -> List[Dict]:
+        """Scan a real directory or drive root to extract actual file metadata. No simulated data is returned."""
+        files_metadata = []
+        try:
+            # Walk directory to find files (limit to 150 files to prevent performance lag)
+            file_counter = 0
+            for root, dirs, files in os.walk(dir_path):
+                if file_counter >= 150:
+                    break
+                for name in files:
+                    if file_counter >= 150:
+                        break
+                    full_path = os.path.join(root, name)
+                    try:
+                        st = os.stat(full_path)
+                        size = st.st_size
+                        created_time = datetime.fromtimestamp(st.st_ctime, tz=timezone.utc).isoformat()
+                        modified_time = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
+                        accessed_time = datetime.fromtimestamp(st.st_atime, tz=timezone.utc).isoformat()
+                        
+                        md5_val = ""
+                        sha256_val = ""
+                        if size < 1 * 1024 * 1024:
+                            md5_h = hashlib.md5()
+                            sha_h = hashlib.sha256()
+                            with open(full_path, 'rb') as f:
+                                data = f.read()
+                                md5_h.update(data)
+                                sha_h.update(data)
+                            md5_val = md5_h.hexdigest()
+                            sha256_val = sha_h.hexdigest()
+                            
+                        files_metadata.append({
+                            'type': 'file',
+                            'filename': name,
+                            'path': full_path,
+                            'size': size,
+                            'created': created_time,
+                            'modified': modified_time,
+                            'accessed': accessed_time,
+                            'hash_md5': md5_val or None,
+                            'hash_sha256': sha256_val or None,
+                            'status': 'active'
+                        })
+                        file_counter += 1
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"Error scanning directory: {e}")
+            
+        return files_metadata
+
 
 
 class DiskImageAnalyzer:
@@ -396,8 +410,8 @@ class DiskImageAnalyzer:
         # Scan for recoverable files
         results['recovered_files'] = self.recovery.scan_disk_image(image_path, filesystem_type)
         
-        # Extract timestamps
-        if os.path.exists(image_path):
+        # Extract timestamps only if it's a real file
+        if os.path.isfile(image_path):
             with open(image_path, 'rb') as f:
                 results['timestamps'] = self.recovery.extract_timestamps(f)
                 

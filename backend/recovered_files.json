@@ -1,0 +1,19 @@
+[
+  {
+    "id": "ev_test_evidence_id_0",
+    "file_name": "test_device.img",
+    "file_type": ".img",
+    "original_location": "C:\\Users\\HomePC\\Downloads\\ai-digital-forensics-system-complete\\backend\\tests\\test_recovery_redesign.py",
+    "status": "recovered",
+    "file_size": 1024,
+    "creation_date": "2026-06-24",
+    "last_modified_date": "2026-06-24",
+    "recovery_confidence": "High (100%)",
+    "hash_sha256": "0b6924ee0a30489bad1047ac7e4c2c3902bd0fa98358cd3302b70ef7d6cd54d6",
+    "hash_sha512": "8d01c66491cc50d6c4a9e78bd1cacfeea4a60250c3ba7ff895b9f14fa49b88fa3506c6f3f6a60dbe7d0fc34dd235d1ab387c913656b2d7cf74a253f4bfeb8e4f",
+    "metadata": {
+      "created_date": "2026-06-24",
+      "modified_date": "2026-06-24"
+    }
+  }
+]

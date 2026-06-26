@@ -1,0 +1,155 @@
+openapi: 3.0.0
+info:
+  title: AI Digital Forensics System API
+  version: 2.0.0
+  description: API documentation for the AI Digital Forensics System.
+paths:
+  /api/accounts/login/:
+    post:
+      summary: Login user and return JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access:
+                    type: string
+                  refresh:
+                    type: string
+                  user:
+                    type: object
+
+  /api/accounts/token/refresh/:
+    post:
+      summary: Refresh JWT Access Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh
+              properties:
+                refresh:
+                  type: string
+      responses:
+        200:
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access:
+                    type: string
+
+  /api/cases/:
+    get:
+      summary: Get all cases (Admins see all, Investigators/Analysts see assigned/owned)
+      responses:
+        200:
+          description: List of cases
+    post:
+      summary: Create a new case (Admin/Investigator only)
+      responses:
+        201:
+          description: Case created
+
+  /api/evidence/:
+    get:
+      summary: Get list of evidence items
+    post:
+      summary: Upload new digital evidence (Admin/Investigator only)
+      responses:
+        201:
+          description: Evidence created
+
+  /api/analysis/:
+    get:
+      summary: Get all completed forensic analysis results
+    post:
+      summary: Create/schedule analysis job (Admin/Investigator only)
+
+  /api/analysis/chat/:
+    post:
+      summary: Neural dispatch to AI Assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                case_context:
+                  type: string
+                forensic_data:
+                  type: string
+                history:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        200:
+          description: AI response text
+
+  /api/analysis/train-model/:
+    post:
+      summary: Trigger Scikit-Learn model training (Admin only)
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: Model trained successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  metrics:
+                    type: object
+                  explanations:
+                    type: array
+                    items:
+                      type: string
+        403:
+          description: Permission Denied - Non-admin user.
+
+  /api/analysis/model-info/:
+    get:
+      summary: Get current active Scikit-Learn model details
+      responses:
+        200:
+          description: Model metadata
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,10 +1,10 @@
-from .claude_client import ClaudeClient
+from .orchestrator import AIOrchestrator
 
 
 class Summarizer:
 
     def __init__(self):
-        self.claude = ClaudeClient()
+        self.orchestrator = AIOrchestrator()
 
     def summarize(self, text: str, max_words: int = 60):
         """
@@ -18,9 +18,9 @@ class Summarizer:
         Returns:
             Generated summary
         """
-        if self.claude.is_configured():
+        if self.orchestrator:
             try:
-                summary = self.claude.summarize(text, max_words)
+                summary = self.orchestrator.summarize(text, max_words)
                 return summary
             except Exception as e:
                 print(f"Claude summarization failed: {e}")

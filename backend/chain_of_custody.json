@@ -1,0 +1,13 @@
+[
+  {
+    "case_id": "173ef767-75f4-4b0e-b82d-0d600d44f992",
+    "evidence_id": "db2b2b3b-17b1-4613-bca8-f782469f2072",
+    "action": "Recovery operation",
+    "performed_by": "admin",
+    "timestamp": "2026-06-23T07:44:32.031007+00:00",
+    "hash_before": "",
+    "hash_after": "",
+    "notes": "PhotoRec carving executed.",
+    "_id": "f85d1695-0106-4b99-9c0f-88d8829bfac6"
+  }
+]

@@ -65,10 +65,10 @@ def test_is_admin_permission():
         print("Unauthenticated user: DENIED")
         
         print("IsAdmin Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"IsAdmin Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_is_investigator_permission():
@@ -96,10 +96,10 @@ def test_is_investigator_permission():
         print("Analyst user: DENIED")
         
         print("IsInvestigator Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"IsInvestigator Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_is_analyst_or_above_permission():
@@ -121,10 +121,10 @@ def test_is_analyst_or_above_permission():
         print("Unauthenticated user: DENIED")
         
         print("IsAnalystOrAbove Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"IsAnalystOrAbove Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_can_manage_cases_permission():
@@ -157,10 +157,10 @@ def test_can_manage_cases_permission():
         print("Analyst POST: DENIED")
         
         print("CanManageCases Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"CanManageCases Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_can_manage_users_permission():
@@ -188,10 +188,10 @@ def test_can_manage_users_permission():
         print("Analyst POST: DENIED")
         
         print("CanManageUsers Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"CanManageUsers Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_can_manage_system_permission():
@@ -214,10 +214,10 @@ def test_can_manage_system_permission():
             print(f"{role}: DENIED")
         
         print("CanManageSystem Permission: SUCCESS")
-        return True
     except Exception as e:
         print(f"CanManageSystem Permission: FAILED - {e}")
-        return False
+        raise
+
 
 
 def test_role_definitions():
@@ -233,8 +233,23 @@ def test_role_definitions():
         
         print(f"Available roles: {roles}")
         
-        # Test creating users with different roles
+        # Pre-cleanup: remove any leftover test users from a previous run
         test_username = f"role_test_user"
+        from mongo_connection import get_users_collection
+        collection = get_users_collection()
+        if collection is not None:
+            collection.delete_many({"username": {"$regex": f"^{test_username}"}})
+        else:
+            import json
+            from accounts.models import USERS_FILE
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, 'r') as f:
+                    users = json.load(f)
+                users = [u for u in users if not u.get('username', '').startswith(test_username)]
+                with open(USERS_FILE, 'w') as f:
+                    json.dump(users, f, indent=2, default=str)
+        
+        # Test creating users with different roles
         
         # Create admin user
         admin = User.create_user(
@@ -269,13 +284,24 @@ def test_role_definitions():
         # Clean up
         from mongo_connection import get_users_collection
         collection = get_users_collection()
-        collection.delete_many({"username": {"$regex": f"^{test_username}"}})
+        if collection is not None:
+            collection.delete_many({"username": {"$regex": f"^{test_username}"}})
+        else:
+            # File cleanup fallback
+            import json
+            from accounts.models import USERS_FILE
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, 'r') as f:
+                    users = json.load(f)
+                users = [u for u in users if not u.get('username', '').startswith(test_username)]
+                with open(USERS_FILE, 'w') as f:
+                    json.dump(users, f, indent=2, default=str)
         
         print("Role Definitions: SUCCESS")
-        return True
     except Exception as e:
         print(f"Role Definitions: FAILED - {e}")
-        return False
+        raise
+
 
 
 def run_all_tests():

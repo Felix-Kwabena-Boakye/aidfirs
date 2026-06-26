@@ -1,0 +1,109 @@
+﻿
+============================================================
+AI DIGITAL FORENSICS SYSTEM - TEST SUITE
+============================================================
+
+============================================================
+STEP 1: Running Model Tests
+============================================================
+==================================================
+Running MongoDB Model Tests
+==================================================
+
+=== Testing MongoDB Connection ===
+MongoDB Connection: FAILED
+Error: 'NoneType' object has no attribute 'database'
+
+=== Testing User Model ===
+User Model Test: FAILED
+Error: 'NoneType' object has no attribute 'find_one'
+
+=== Testing Case Model ===
+Case Model Test: FAILED
+Error: 'NoneType' object has no attribute 'find_one'
+
+=== Testing Evidence Model ===
+Evidence Model Test: FAILED
+Error: 'NoneType' object has no attribute 'find_one'
+
+=== Testing Analysis Result Model ===
+Analysis Result Model Test: FAILED
+Error: 'NoneType' object has no attribute 'find_one'
+
+==================================================
+Test Results Summary
+==================================================
+MongoDB Connection: FAILED
+User Model: FAILED
+Case Model: FAILED
+Evidence Model: FAILED
+Analysis Result Model: FAILED
+
+Total: 0/5 tests passed
+
+============================================================
+STEP 2: Running AI Engine Tests
+============================================================
+==================================================
+Running AI Engine Tests
+==================================================
+
+=== Testing Indicator Extraction ===
+Claude API error during indicator extraction: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLxYeT6cGEVukkzHC3H'}
+Extracted indicators: {'ips': ['192.168.1.100'], 'emails': ['attacker@evil.com'], 'urls': ['http://suspicious-site.com/payload.exe'], 'hashes': ['a1b2c3d4e5f6789012345678abcdef12']}
+Indicator Extraction: SUCCESS
+
+=== Testing Text Summarization ===
+Claude API error: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLxec7x4xhPtM4yo8Az'}
+Summary: Digital forensics is the process of uncovering and interpreting electronic data. The goal is to preserve any evidence in its most original form while performing a structured investigation. Digital forensics investigates data theft, fraud, cybercrime, and any other form of electronic evidence-related investigation. Forensic analysts use various tools and techniques to recover deleted files, analyze network traffic, and examine system...
+Summarization: SUCCESS
+
+=== Testing Anomaly Detection ===
+Claude API error during risk analysis: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLxjPcCxH25agBBinA6'}
+Anomaly detection result: {'risk_score': 6, 'risk_level': 'High', 'method': 'rule-based'}
+Anomaly Detection: SUCCESS
+
+=== Testing AI Engine Integration ===
+Claude API error during indicator extraction: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLxwoEVhFAvVDFjTd89'}
+Claude API error: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLxz6tRA4x9ozzg5UPt'}
+Claude API error during risk analysis: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CanLy3P5z6WyktwQRPcFf'}
+AI Engine result keys: dict_keys(['analysis_time', 'summary', 'indicators', 'risk_assessment'])
+AI Engine Integration: SUCCESS
+
+==================================================
+Test Results Summary
+==================================================
+Indicator Extraction: PASSED
+Summarization: PASSED
+Anomaly Detection: PASSED
+AI Engine Integration: PASSED
+
+Total: 4/4 tests passed
+
+============================================================
+STEP 3: Running API Tests
+============================================================
+Note: API tests require the Django server to be running
+Start server with: python start_server.py
+------------------------------------------------------------
+==================================================
+Running API Tests
+==================================================
+
+=== Testing Server Connection ===
+Server Connection: FAILED - Server not running
+Please start the server with: python start_server.py
+
+==================================================
+API Tests skipped - Server not running
+==================================================
+
+============================================================
+FINAL TEST SUMMARY
+============================================================
+Model Tests: FAILED/SKIPPED
+AI Engine Tests: PASSED
+API Tests: FAILED/SKIPPED
+
+Overall: 1/3 test suites passed
+============================================================

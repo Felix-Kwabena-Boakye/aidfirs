@@ -1,6 +1,12 @@
 from mongo_connection import cases_collection
 from datetime import datetime, timezone
 from bson import ObjectId
+import json
+import os
+import uuid
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CASES_FILE = os.path.join(BASE_DIR, 'cases.json')
 
 class Case:
     """
@@ -69,9 +75,21 @@ class Case:
         """
         Create a new case in MongoDB.
         """
-        # Check if case number already exists
-        if cases_collection.find_one({"case_number": case_number}):
-            raise ValueError(f"Case number {case_number} already exists")
+        if cases_collection is not None:
+            if cases_collection.find_one({"case_number": case_number}):
+                raise ValueError(f"Case number {case_number} already exists")
+        else:
+
+            if os.path.exists(CASES_FILE):
+                try:
+                    with open(CASES_FILE, 'r') as f:
+                        cases_data = json.load(f)
+                        if any(c.get("case_number") == case_number for c in cases_data):
+                            raise ValueError(f"Case number {case_number} already exists")
+                except ValueError:
+                    raise
+                except:
+                    pass
         
         case_doc = {
             "case_number": case_number,
@@ -88,8 +106,21 @@ class Case:
             "tags": []
         }
         
-        result = cases_collection.insert_one(case_doc)
-        case_doc["_id"] = result.inserted_id
+        if cases_collection is not None:
+            result = cases_collection.insert_one(case_doc)
+            case_doc["_id"] = result.inserted_id
+        else:
+            case_doc["_id"] = str(uuid.uuid4())
+            cases_data = []
+            if os.path.exists(CASES_FILE):
+                try:
+                    with open(CASES_FILE, 'r') as f:
+                        cases_data = json.load(f)
+                except:
+                    pass
+            cases_data.append(case_doc)
+            with open(CASES_FILE, 'w') as f:
+                json.dump(cases_data, f, indent=2, default=str)
         
         return Case.from_dict(case_doc)
     
@@ -98,12 +129,23 @@ class Case:
         """
         Get case by ID.
         """
-        try:
-            case_data = cases_collection.find_one({"_id": ObjectId(case_id)})
-            if case_data:
-                return Case.from_dict(case_data)
-        except Exception:
-            pass
+        if cases_collection is not None:
+            try:
+                case_data = cases_collection.find_one({"_id": ObjectId(case_id)})
+                if case_data:
+                    return Case.from_dict(case_data)
+            except Exception:
+                pass
+                
+        if os.path.exists(CASES_FILE):
+            try:
+                with open(CASES_FILE, 'r') as f:
+                    cases_data = json.load(f)
+                    for c in cases_data:
+                        if str(c.get('_id')) == str(case_id):
+                            return Case.from_dict(c)
+            except:
+                pass
         return None
     
     @staticmethod
@@ -111,24 +153,68 @@ class Case:
         """
         Get all cases.
         """
-        cases = cases_collection.find().sort("created_at", -1)
-        return [Case.from_dict(c) for c in cases]
+        if cases_collection is not None:
+            try:
+                cases = cases_collection.find().sort("created_at", -1)
+                return [Case.from_dict(c) for c in cases]
+            except:
+                pass
+                
+        if os.path.exists(CASES_FILE):
+            try:
+                with open(CASES_FILE, 'r') as f:
+                    cases_data = json.load(f)
+                    cases_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                    return [Case.from_dict(c) for c in cases_data]
+            except:
+                pass
+        return []
     
     @staticmethod
     def get_by_investigator(investigator_id):
         """
         Get all cases for a specific investigator.
         """
-        cases = cases_collection.find({"investigator_id": investigator_id}).sort("created_at", -1)
-        return [Case.from_dict(c) for c in cases]
+        if cases_collection is not None:
+            try:
+                cases = cases_collection.find({"investigator_id": investigator_id}).sort("created_at", -1)
+                return [Case.from_dict(c) for c in cases]
+            except:
+                pass
+                
+        if os.path.exists(CASES_FILE):
+            try:
+                with open(CASES_FILE, 'r') as f:
+                    cases_data = json.load(f)
+                    filtered = [c for c in cases_data if c.get('investigator_id') == investigator_id]
+                    filtered.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                    return [Case.from_dict(c) for c in filtered]
+            except:
+                pass
+        return []
     
     @staticmethod
     def get_by_status(status):
         """
         Get cases by status.
         """
-        cases = cases_collection.find({"status": status}).sort("created_at", -1)
-        return [Case.from_dict(c) for c in cases]
+        if cases_collection is not None:
+            try:
+                cases = cases_collection.find({"status": status}).sort("created_at", -1)
+                return [Case.from_dict(c) for c in cases]
+            except:
+                pass
+                
+        if os.path.exists(CASES_FILE):
+            try:
+                with open(CASES_FILE, 'r') as f:
+                    cases_data = json.load(f)
+                    filtered = [c for c in cases_data if c.get('status') == status]
+                    filtered.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                    return [Case.from_dict(c) for c in filtered]
+            except:
+                pass
+        return []
     
     def update(self, **kwargs):
         """
@@ -139,25 +225,87 @@ class Case:
         # Don't update _id
         update_data = {k: v for k, v in kwargs.items() if k != '_id'}
         
-        cases_collection.update_one(
-            {"_id": self._id},
-            {"$set": update_data}
-        )
+        if cases_collection is not None:
+            try:
+                cases_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": update_data}
+                )
+            except:
+                pass
+        else:
+            if os.path.exists(CASES_FILE):
+                try:
+                    with open(CASES_FILE, 'r') as f:
+                        cases_data = json.load(f)
+                    for c in cases_data:
+                        if str(c.get('_id')) == str(self._id):
+                            for k, v in update_data.items():
+                                c[k] = v.isoformat() if isinstance(v, datetime) else v
+                            break
+                    with open(CASES_FILE, 'w') as f:
+                        json.dump(cases_data, f, indent=2, default=str)
+                except:
+                    pass
         
         for key, value in kwargs.items():
             setattr(self, key, value)
         
+        return self
+
+    def save(self):
+        """
+        Save current case state to MongoDB.
+        """
+        update_data = self.to_dict()
+        if '_id' in update_data:
+            del update_data['_id']
+        
+        if cases_collection is not None:
+            try:
+                cases_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": update_data}
+                )
+            except:
+                pass
+        else:
+            if os.path.exists(CASES_FILE):
+                try:
+                    with open(CASES_FILE, 'r') as f:
+                        cases_data = json.load(f)
+                    for i, c in enumerate(cases_data):
+                        if str(c.get('_id')) == str(self._id):
+                            updated = self.to_dict()
+                            updated['_id'] = str(self._id)
+                            cases_data[i] = updated
+                            break
+                    with open(CASES_FILE, 'w') as f:
+                        json.dump(cases_data, f, indent=2, default=str)
+                except:
+                    pass
         return self
     
     def add_evidence(self, evidence_id):
         """
         Add evidence to case.
         """
-        cases_collection.update_one(
-            {"_id": self._id},
-            {"$addToSet": {"evidence_ids": evidence_id}}
-        )
-        self.evidence_ids.append(evidence_id)
+        if cases_collection is not None:
+            try:
+                cases_collection.update_one(
+                    {"_id": self._id},
+                    {"$addToSet": {"evidence_ids": evidence_id}}
+                )
+            except:
+                pass
+        else:
+            if evidence_id not in self.evidence_ids:
+                self.evidence_ids.append(evidence_id)
+                self.save()
+                return self
+        
+        if evidence_id not in self.evidence_ids:
+            self.evidence_ids.append(evidence_id)
         return self
     
     def close(self):
@@ -181,24 +329,67 @@ class Case:
             self.assigned_to = []
         
         # Update with new investigators
-        cases_collection.update_one(
-            {"_id": self._id},
-            {"$set": {"assigned_to": investigator_ids, "updated_at": datetime.now(timezone.utc)}}
-        )
+        if cases_collection is not None:
+            try:
+                cases_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": {"assigned_to": investigator_ids, "updated_at": datetime.now(timezone.utc)}}
+                )
+            except:
+                pass
+        
         self.assigned_to = investigator_ids
+        self.updated_at = datetime.now(timezone.utc)
+        if cases_collection is None:
+            self.save()
         return self
     
     def delete(self):
         """
         Delete case from MongoDB.
         """
-        cases_collection.delete_one({"_id": self._id})
+        if cases_collection is not None:
+            try:
+                cases_collection.delete_one({"_id": self._id})
+            except:
+                pass
+        else:
+            if os.path.exists(CASES_FILE):
+                try:
+                    with open(CASES_FILE, 'r') as f:
+                        cases_data = json.load(f)
+                    cases_data = [c for c in cases_data if str(c.get('_id')) != str(self._id)]
+                    with open(CASES_FILE, 'w') as f:
+                        json.dump(cases_data, f, indent=2, default=str)
+                except:
+                    pass
     
     @staticmethod
     def from_dict(data):
         """
         Create Case instance from dictionary.
         """
+        created_at = data.get('created_at')
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            except:
+                pass
+                
+        updated_at = data.get('updated_at')
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            except:
+                pass
+                
+        closed_at = data.get('closed_at')
+        if isinstance(closed_at, str):
+            try:
+                closed_at = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+            except:
+                pass
+
         return Case(
             _id=data.get('_id'),
             case_number=data.get('case_number'),
@@ -208,9 +399,9 @@ class Case:
             status=data.get('status', 'open'),
             priority=data.get('priority', 'medium'),
             case_type=data.get('case_type', ''),
-            created_at=data.get('created_at'),
-            updated_at=data.get('updated_at'),
-            closed_at=data.get('closed_at'),
+            created_at=created_at,
+            updated_at=updated_at,
+            closed_at=closed_at,
             evidence_ids=data.get('evidence_ids', []),
             tags=data.get('tags', []),
             assigned_to=data.get('assigned_to', [])

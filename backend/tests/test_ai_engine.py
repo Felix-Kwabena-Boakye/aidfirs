@@ -36,11 +36,11 @@ def test_indicator_extraction():
         # Verify indicators were extracted
         assert 'ips' in indicators or 'urls' in indicators or 'hashes' in indicators or 'emails' in indicators
         print("Indicator Extraction: SUCCESS")
-        return True
     except Exception as e:
         print(f"Indicator Extraction: FAILED")
         print(f"Error: {e}")
-        return False
+        raise
+
 
 
 def test_summarization():
@@ -66,11 +66,11 @@ def test_summarization():
         assert summary is not None
         assert len(summary) > 0
         print("Summarization: SUCCESS")
-        return True
     except Exception as e:
         print(f"Summarization: FAILED")
         print(f"Error: {e}")
-        return False
+        raise
+
 
 
 def test_anomaly_detection():
@@ -97,11 +97,11 @@ def test_anomaly_detection():
         assert result is not None
         assert 'risk_score' in result or 'risk_level' in result
         print("Anomaly Detection: SUCCESS")
-        return True
     except Exception as e:
         print(f"Anomaly Detection: FAILED")
         print(f"Error: {e}")
-        return False
+        raise
+
 
 
 def test_ai_engine_integration():
@@ -122,11 +122,11 @@ def test_ai_engine_integration():
         assert result is not None
         assert isinstance(result, dict)
         print("AI Engine Integration: SUCCESS")
-        return True
     except Exception as e:
         print(f"AI Engine Integration: FAILED")
         print(f"Error: {e}")
-        return False
+        raise
+
 
 
 def run_all_tests():
@@ -135,12 +135,22 @@ def run_all_tests():
     print("Running AI Engine Tests")
     print("=" * 50)
     
-    results = {
-        "Indicator Extraction": test_indicator_extraction(),
-        "Summarization": test_summarization(),
-        "Anomaly Detection": test_anomaly_detection(),
-        "AI Engine Integration": test_ai_engine_integration(),
-    }
+    results = {}
+
+    def _run_and_bool(fn, key):
+        try:
+            fn()
+            results[key] = True
+        except Exception:
+            results[key] = False
+            raise
+
+    _run_and_bool(test_indicator_extraction, "Indicator Extraction")
+    _run_and_bool(test_summarization, "Summarization")
+    _run_and_bool(test_anomaly_detection, "Anomaly Detection")
+    _run_and_bool(test_ai_engine_integration, "AI Engine Integration")
+
+
     
     print("\n" + "=" * 50)
     print("Test Results Summary")

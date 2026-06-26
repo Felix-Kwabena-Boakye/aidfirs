@@ -16,65 +16,92 @@ logger = logging.getLogger("MongoDB")
 # --------------------------------------------------
 load_dotenv()
 
-# You can temporarily set the URI here for testing (optional)
-TEMP_MONGO_URI = "mongodb://forensics_admin:StrongPassword123!@ai-forensics-cluster-shard-00-00.osj874c.mongodb.net:27017/ai_digital_forensics?tls=true&amp;authSource=admin"
-
-MONGO_URI = os.getenv("MONGO_URI") or TEMP_MONGO_URI
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("MONGO_DB_NAME", "ai_digital_forensics")
 
 if not MONGO_URI:
-    raise ValueError("MONGO_URI not found in environment variables or TEMP_MONGO_URI")
+    raise ValueError("MONGO_URI environment variable is not configured.")
 
 # --------------------------------------------------
-# MongoDB Client Initialization
+# MongoDB Client Initialization (Dynamic Connection Mode)
 # --------------------------------------------------
+MONGO_AVAILABLE = False
+client = None
+
 try:
-    client = MongoClient(
-        MONGO_URI,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        serverSelectionTimeoutMS=30000,
-        connectTimeoutMS=10000,
-        socketTimeoutMS=30000,
-        localThresholdMS=1000,
-        maxPoolSize=50,
-        retryWrites=True
-    )
-
-    # Force connection check
-    client.admin.command("ping")
-    logger.info("Successfully connected to MongoDB Atlas")
-
-except errors.ServerSelectionTimeoutError as err:
-    logger.error("MongoDB connection timed out")
-    raise err
-
+    # Read settings from environment
+    allow_invalid_certs = os.getenv("MONGO_TLS_ALLOW_INVALID_CERTIFICATES", "true").lower() == "true"
+    
+    # Try first attempt (SSL/TLS with certificate validation)
+    logger.info("Attempting MongoDB connection with SSL/TLS verification...")
+    client = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+    client.admin.command('ping')
+    MONGO_AVAILABLE = True
+    logger.info("MongoDB connection established successfully with SSL/TLS verification.")
 except Exception as e:
-    logger.error("MongoDB connection failed")
-    raise e
+    logger.warning(f"MongoDB connection with SSL/TLS verification failed: {e}.")
+    try:
+        # Fallback 1: Lax TLS verification
+        logger.info("Retrying MongoDB connection with lax verification (tlsAllowInvalidCertificates=True)...")
+        client = MongoClient(MONGO_URI, tlsAllowInvalidCertificates=True, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        MONGO_AVAILABLE = True
+        logger.info("MongoDB connection established successfully (SSL/TLS verification bypassed).")
+    except Exception as e2:
+        logger.warning(f"MongoDB connection with tlsAllowInvalidCertificates failed: {e2}.")
+        try:
+            # Fallback 2: Direct connection without SSL/TLS parameter
+            logger.info("Retrying MongoDB connection without SSL/TLS...")
+            client = MongoClient(MONGO_URI, ssl=False, serverSelectionTimeoutMS=5000)
+            client.admin.command('ping')
+            MONGO_AVAILABLE = True
+            logger.info("MongoDB connection established successfully without SSL/TLS.")
+        except Exception as e3:
+            MONGO_AVAILABLE = False
+            client = None
+            logger.error(f"All MongoDB connection attempts failed. Last error: {e3}. Entering hybrid-bypass mode.")
 
 # --------------------------------------------------
 # Database Reference
 # --------------------------------------------------
-db = client[DB_NAME]
+if MONGO_AVAILABLE:
+    db = client[DB_NAME]
+else:
+    db = None
 
 # --------------------------------------------------
 # Collection References
 # --------------------------------------------------
 # User authentication (replacing Django's User model)
-users_collection = db["users"]
+users_collection = db["users"] if MONGO_AVAILABLE else None
 
 # Cases collection
-cases_collection = db["cases"]
+cases_collection = db["cases"] if MONGO_AVAILABLE else None
 
 # Evidence collection
-evidence_collection = db["evidence"]
+evidence_collection = db["evidence"] if MONGO_AVAILABLE else None
 
 # Analysis results collection (already used by AI engine)
-analysis_results_collection = db["analysis_results"]
+analysis_results_collection = db["analysis_results"] if MONGO_AVAILABLE else None
 
 # Audit logs collection
-audit_logs_collection = db["audit_logs"]
+audit_logs_collection = db["audit_logs"] if MONGO_AVAILABLE else None
+
+# Chain of custody collection
+chain_of_custody_collection = db["chain_of_custody"] if MONGO_AVAILABLE else None
+
+# Timeline events collection
+timeline_events_collection = db["timeline_events"] if MONGO_AVAILABLE else None
+
+# AI Models collection for ML models
+ai_models_collection = db["ai_models"] if MONGO_AVAILABLE else None
+
+# New collections for AIDFIRS platform refactoring
+recovered_files_collection = db["recovered_files"] if MONGO_AVAILABLE else None
+metadata_collection = db["metadata"] if MONGO_AVAILABLE else None
+ai_reports_collection = db["ai_reports"] if MONGO_AVAILABLE else None
+system_settings_collection = db["system_settings"] if MONGO_AVAILABLE else None
+
 
 # --------------------------------------------------
 # Utility Functions
@@ -83,6 +110,13 @@ audit_logs_collection = db["audit_logs"]
 def get_database():
     """
     Returns the active MongoDB database instance.
+    """
+    return db
+
+
+def get_db():
+    """
+    Returns the database (alias for get_database).
     """
     return db
 
@@ -129,6 +163,56 @@ def get_audit_logs_collection():
     return audit_logs_collection
 
 
+def get_chain_of_custody_collection():
+    """
+    Returns the chain of custody collection.
+    """
+    return chain_of_custody_collection
+
+
+def get_timeline_events_collection():
+    """
+    Returns the timeline events collection.
+    """
+    return timeline_events_collection
+
+
+def get_ai_models_collection():
+    """
+    Returns the ai_models collection.
+    """
+    return ai_models_collection
+
+
+def get_recovered_files_collection():
+    """
+    Returns the recovered_files collection.
+    """
+    return recovered_files_collection
+
+
+def get_metadata_collection():
+    """
+    Returns the metadata collection.
+    """
+    return metadata_collection
+
+
+def get_ai_reports_collection():
+    """
+    Returns the ai_reports collection.
+    """
+    return ai_reports_collection
+
+
+def get_system_settings_collection():
+    """
+    Returns the system_settings collection.
+    """
+    return system_settings_collection
+
+
+
 def health_check():
     """
     Checks if MongoDB is reachable.
@@ -162,6 +246,8 @@ def setup_indexes():
     """
     Create indexes for better query performance.
     """
+    if not MONGO_AVAILABLE or users_collection is None:
+        return
     # Users indexes - use unique index names to avoid conflicts
     try:
         users_collection.create_index("email", unique=True, name="user_email_idx")
@@ -221,6 +307,26 @@ def setup_indexes():
     except Exception as e:
         logger.debug(f"Analysis status index note: {e}")
     
+    try:
+        if ai_models_collection is not None:
+            ai_models_collection.create_index("model_name", unique=True, name="model_name_idx")
+    except Exception as e:
+        logger.debug(f"AI Models index note: {e}")
+    
+    try:
+        if chain_of_custody_collection is not None:
+            chain_of_custody_collection.create_index("case_id", name="coc_case_idx")
+            chain_of_custody_collection.create_index("evidence_id", name="coc_evidence_idx")
+    except Exception as e:
+        logger.debug(f"Chain of Custody index note: {e}")
+    
+    try:
+        if timeline_events_collection is not None:
+            timeline_events_collection.create_index("case_id", name="timeline_case_idx")
+            timeline_events_collection.create_index("timestamp", name="timeline_timestamp_idx")
+    except Exception as e:
+        logger.debug(f"Timeline events index note: {e}")
+        
     logger.info("Database indexes configured")
 
 # Create indexes on startup

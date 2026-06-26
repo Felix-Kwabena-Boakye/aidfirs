@@ -1,0 +1,20 @@
+[
+  {
+    "case_id": "173ef767-75f4-4b0e-b82d-0d600d44f992",
+    "evidence_type": "disk_image",
+    "file_name": "VendorCo ProductCode_Forensic_Image",
+    "file_path": "D:\\",
+    "file_size": 62896734208,
+    "hash_md5": "placeholder_5b09d0bf-6b2a-49cc-8d55-3b8fb73746f9",
+    "hash_sha1": "placeholder_5b09d0bf-6b2a-49cc-8d55-3b8fb73746f9",
+    "hash_sha256": "placeholder_5b09d0bf-6b2a-49cc-8d55-3b8fb73746f9",
+    "description": "Source Device: VendorCo ProductCode\nSerial: 6865351055103760650\nInterface: USB / D:",
+    "collector_id": "7c964ee9-f930-4a25-be8d-cbbcd25b80ad",
+    "status": "collected",
+    "collected_at": "2026-05-25 16:18:55.103187+00:00",
+    "analyzed_at": null,
+    "tags": [],
+    "metadata": {},
+    "_id": "db2b2b3b-17b1-4613-bca8-f782469f2072"
+  }
+]

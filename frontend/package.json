@@ -1,0 +1,23 @@
+{
+  "name": "ai-forensics-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "cd web && npm run dev",
+
+    "dev:admin": "cd admin && npm run dev",
+
+    "dev:investigator": "cd investigator && npm run dev",
+
+    "install:all": "cd web && npm install && cd ../admin && npm install && cd ../investigator && npm install",
+
+    "build": "cd web && npm run build",
+    "preview": "cd web && npm run preview"
+  },
+  "workspaces": [
+    "web",
+    "admin",
+    "investigator"
+  ]
+}

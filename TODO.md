@@ -1,28 +1,19 @@
-# Frontend Fixes - Progress Tracker
+# TODO
 
-## Current Status
-Step 1: Dependencies updated & npm installed ✓
-Step 2: Toaster provider added to App.jsx ✓
+## Mongo users_collection + User model fixes
+- [ ] Replace global `from mongo_connection import users_collection` usage in `backend/accounts/models.py` with safe runtime getters to avoid None/connection-time issues.
+- [ ] Fix `User.save()`/`update_last_login()` to correctly handle `_id` types (ObjectId vs string) and always persist `date_joined/last_login` safely.
+- [ ] Fix `User.create_user()` so it passes a valid `password_hash` even when `password=None` (OAuth flows) and avoids crashing.
+- [ ] Fix exception swallowing (`except:`) to narrow to `Exception` where safe (avoid masking real bugs), while keeping fallback behavior.
+- [ ] Add unit test coverage or adjust existing tests to validate Mongo and file fallback behaviors.
+- [ ] Run backend test suite to confirm everything passes.
 
-## Next Steps
-3. Fix Login.jsx errors/console to toast ✓
-4. Fix Users.jsx admin alert/console to toast ✓
-4. Fix Users/Devices/Dashboard console/alert to toast ✓
+## Progress log
+- [x] (0/5) Inspect and plan done.
+- [x] (1/5) Update `backend/accounts/models.py` implementation.
+- [x] (2/5) Add/adjust tests for file fallback + password=None + _id normalization.
+- [x] (3/5) Ensure tests can run when Mongo is unavailable.
+- [x] (4/5) Run pytest suite.
+- [x] (5/5) Fix any failures and re-run.
 
 
-## Steps Completed
-1. **Dependencies**: Added sonner toast lib to both apps.
-
-## Remaining Steps
-1. Install deps: cd frontend/admin & yarn install; cd frontend/investigator & yarn install
-2. Create hooks: useAuth.js, ProtectedRoute.jsx, ToastProvider.jsx (both apps)
-3. Update App.jsx/main.jsx to use providers/protect routes
-4. Fix Login.jsx (remove demos, fix redirects, toasts) both apps
-5. Fix Users.jsx (admin): replace alerts with modals/toasts
-6. Fix Devices.jsx (both): remove console/alerts
-7. Fix Dashboard.jsx: better error handling
-8. Global: replace error divs with toasts
-9. Test: dev servers, login/errors
-10. Cleanup: remove unused, lint
-
-**Next Step**: Run installs and confirm.

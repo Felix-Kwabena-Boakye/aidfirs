@@ -16,6 +16,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from django.conf import settings
 from .models import User
+from .services import UserService
 
 
 class MongoJWTAuthentication(BaseAuthentication):
@@ -49,7 +50,7 @@ class MongoJWTAuthentication(BaseAuthentication):
         if not user_id:
             raise AuthenticationFailed('Token payload missing user_id.')
 
-        user = User.get_by_id(user_id)
+        user = UserService.get_user_by_id(user_id)
         if not user:
             raise AuthenticationFailed('User not found.')
 

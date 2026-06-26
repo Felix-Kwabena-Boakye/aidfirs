@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Responsive base styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-gradient-to-br from-gray-900 via-gray-800 to-black text-gray-100 font-sans antialiased;
+  margin: 0;
+  min-height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 640px) {
+  .container {
+    @apply px-4;
+  }
+  
+  .text-xl {
+    @apply text-lg;
+  }
+  
+  .text-2xl {
+    @apply text-xl;
+  }
+}
+
+@media (min-width: 640px) {
+  .container {
+    @apply px-6 max-w-7xl mx-auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    @apply px-8;
+  }
+}
+
+/* Enhanced Sidebar responsive - mobile drawer with overlay */
+@media (max-width: 1024px) {
+  .sidebar {
+    @apply w-full lg:w-64 lg:flex-shrink-0 transition-all duration-300;
+  }
+  
+  .sidebar-open {
+    @apply fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 shadow-2xl transform translate-x-0 transition-transform duration-300 ease-in-out;
+  }
+  
+  .sidebar-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden;
+  }
+  
+  .sidebar-closed {
+    @apply lg:translate-x-0 -translate-x-full;
+  }
+}
+
+/* Table responsive */
+@media (max-width: 768px) {
+  .table-container {
+    @apply overflow-x-auto -mx-4 px-4;
+  }
+  
+  .data-table {
+    @apply min-w-full;
+  }
+}
+
+/* Chart responsive */
+@media (max-width: 640px) {
+  .chart-container {
+    @apply h-64;
+  }
+}

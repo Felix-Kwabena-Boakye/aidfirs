@@ -12,6 +12,10 @@ urlpatterns = [
     path('classify/', AnalysisResultViewSet.as_view({'post': 'classify'}), name='analysis-classify'),
     path('detect-anomalies/', AnalysisResultViewSet.as_view({'post': 'detect_anomalies'}), name='analysis-detect-anomalies'),
     path('generate-report/', AnalysisResultViewSet.as_view({'post': 'generate_report'}), name='analysis-generate-report'),
+    path('system-execute/', AnalysisResultViewSet.as_view({'post': 'system_execute'}), name='analysis-system-execute'),
+    path('predict-recoverability/', AnalysisResultViewSet.as_view({'post': 'predict_recoverability'}), name='analysis-predict-recoverability'),
+    path('model-info/', AnalysisResultViewSet.as_view({'get': 'model_info'}), name='analysis-model-info'),
+    path('train-model/', AnalysisResultViewSet.as_view({'post': 'train_model'}), name='analysis-train-model'),
     path('<str:pk>/', AnalysisResultViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',

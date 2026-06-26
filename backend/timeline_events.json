@@ -1,0 +1,10 @@
+[
+  {
+    "case_id": "173ef767-75f4-4b0e-b82d-0d600d44f992",
+    "timestamp": "2026-06-23T07:44:37.415595+00:00",
+    "event_type": "Recovery events",
+    "description": "PhotoRec carver executed by admin.",
+    "severity": "info",
+    "_id": "79774f6b-4499-40b1-a035-be9a6cb78f24"
+  }
+]

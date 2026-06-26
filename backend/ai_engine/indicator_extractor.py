@@ -1,11 +1,11 @@
 import re
-from .claude_client import ClaudeClient
+from .orchestrator import AIOrchestrator
 
 
 class IndicatorExtractor:
 
     def __init__(self):
-        self.claude = ClaudeClient()
+        self.orchestrator = AIOrchestrator()
 
     def extract(self, text: str):
         """
@@ -30,10 +30,10 @@ class IndicatorExtractor:
             "hashes": list(set(re.findall(hash_pattern, text))),
         }
 
-        # Use Claude for enhanced extraction if configured
-        if self.claude.is_configured():
+        # Use AI Orchestrator for enhanced extraction
+        if self.orchestrator:
             try:
-                enhanced = self.claude.extract_indicators(text)
+                enhanced = self.orchestrator.extract_indicators(text)
                 # Merge enhanced indicators with regex-based ones
                 for key, value in enhanced.items():
                     if key in indicators:

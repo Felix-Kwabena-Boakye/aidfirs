@@ -19,6 +19,10 @@ build/
 .env
 .env.*
 !.env.example
+production.env
+development.env
+*.env
+!*.env.example
 
 # IDE files
 .vscode/
@@ -38,3 +42,11 @@ Thumbs.db
 # Sensitive files (auto-detected)
 .env
 
+# SQLite Databases
+*.sqlite3
+db.sqlite3
+backend/db.sqlite3
+
+# Local storage and dynamic uploads/recoveries
+backend/storage/
+storage/

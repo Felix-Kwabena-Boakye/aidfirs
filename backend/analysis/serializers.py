@@ -1,4 +1,26 @@
 from rest_framework import serializers
+from pydantic import BaseModel, Field
+from typing import Optional, Literal, List, Dict, Any
+from datetime import datetime
+from pydantic import ConfigDict
+
+class AnalysisResultPydantic(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    
+    _id: Optional[str] = None
+    case_id: str
+    evidence_id: str
+    analysis_type: Literal['static', 'dynamic', 'malware', 'network', 'memory', 'disk', 'log', 'ai']
+    findings: Dict[str, Any] = {}
+    severity: Literal['info', 'low', 'medium', 'high', 'critical'] = 'info'
+    status: Literal['pending', 'in_progress', 'completed', 'failed'] = 'pending'
+    analyzed_by: Optional[str] = None
+    analyzed_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    indicators: List[Dict[str, Any]] = []
+    summaries: List[str] = []
+    recommendations: List[str] = []
+    metadata: Dict[str, Any] = {}
 
 class AnalysisResultSerializer(serializers.Serializer):
     _id = serializers.CharField(read_only=True)
@@ -23,3 +45,7 @@ class AnalysisResultSerializer(serializers.Serializer):
     summaries = serializers.ListField(child=serializers.CharField(), default=list)
     recommendations = serializers.ListField(child=serializers.CharField(), default=list)
     metadata = serializers.DictField(default=dict)
+    
+    def validate(self, data):
+        AnalysisResultPydantic(**data)
+        return data

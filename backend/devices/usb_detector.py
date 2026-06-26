@@ -82,7 +82,7 @@ def _get_drive_type_win32(drive_letter: str) -> int:
       0 = DRIVE_UNKNOWN
       1 = DRIVE_NO_ROOT_DIR
       2 = DRIVE_REMOVABLE  <-- USB pendrives, SD cards
-      3 = DRIVE_FIXED      <-- Internal/external HDDs
+      3 = DRIVE_FIXED      <-- Internal/external HDDs/SSDs
       4 = DRIVE_REMOTE
       5 = DRIVE_CDROM
       6 = DRIVE_RAMDISK
@@ -150,7 +150,7 @@ try {
     $disks = Get-Disk -ErrorAction SilentlyContinue
     foreach ($disk in $disks) {
         $busType = $disk.BusType
-        if ($busType -eq 'USB' -or $busType -eq 7) {
+        if ($true) {
             $partitions = $disk | Get-Partition -ErrorAction SilentlyContinue
             foreach ($part in $partitions) {
                 $letter = $part.DriveLetter
@@ -177,7 +177,7 @@ $results | ConvertTo-Json -Depth 3
              "-ExecutionPolicy", "Bypass", "-Command", ps_script],
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=3,
         )
         stdout = result.stdout.strip()
         if not stdout or stdout.lower() in ("null", ""):
@@ -241,10 +241,13 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
         model = item.get("Model", "")
         serial = str(item.get("SerialNumber") or "").strip()
 
-        # Determine drive type from size
-        drive_type = "USB Pendrive"
-        if size_gb and size_gb > 64:
-            drive_type = "External Hard Drive"
+        # Determine drive type from BusType and size (HDD and USB Drive only)
+        drive_type = "HDD"
+        bus_lower = str(item.get("BusType", "")).lower()
+        if "usb" in bus_lower or bus_lower == "7":
+            drive_type = "USB Drive"
+        else:
+            drive_type = "HDD"
 
         devices.append(USBDevice(
             drive_letter=letter,
@@ -270,8 +273,8 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
             continue  # already found via PowerShell
 
         drive_type_code = _get_drive_type_win32(letter)
-        # 2 = DRIVE_REMOVABLE — pendrives, SD cards, etc.
-        if drive_type_code != 2:
+        # 2 = DRIVE_REMOVABLE, 3 = DRIVE_FIXED
+        if drive_type_code not in (2, 3):
             continue
 
         seen_letters.add(letter)
@@ -282,7 +285,7 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
         devices.append(USBDevice(
             drive_letter=letter,
             volume_name=label,
-            drive_type="USB Pendrive",
+            drive_type="HDD" if drive_type_code == 3 else "USB Drive",
             size_gb=size_gb,
             serial_number="",
             interface="USB",
@@ -330,8 +333,10 @@ def _is_usb_block_device_linux(device_name: str) -> bool:
 
 
 def _get_linux_usb_devices() -> List["USBDevice"]:
-    """Detect USB drives on Linux using lsblk + /sys/bus/usb."""
+    """Detect USB drives on Linux using lsblk + /sys/bus/usb or container mount points."""
     devices = []
+    
+    # 1. Native lsblk scan
     try:
         result = subprocess.run(
             ["lsblk", "-o", "NAME,TYPE,MOUNTPOINT,SIZE,MODEL,FSTYPE", "-J"],
@@ -339,41 +344,72 @@ def _get_linux_usb_devices() -> List["USBDevice"]:
             text=True,
             timeout=10,
         )
-        if not result.stdout:
-            return devices
+        if result.stdout:
+            data = json.loads(result.stdout)
+            for dev in data.get("blockdevices", []):
+                if dev.get("type") != "disk":
+                    continue
+                name = dev.get("name", "")
+                if not _is_usb_block_device_linux(name):
+                    continue
 
-        data = json.loads(result.stdout)
-        for dev in data.get("blockdevices", []):
-            if dev.get("type") != "disk":
-                continue
-            name = dev.get("name", "")
-            if not _is_usb_block_device_linux(name):
-                continue
+                model = (dev.get("model") or "").strip()
+                size_gb = _parse_size_to_gb(dev.get("size", "0"))
 
-            model = (dev.get("model") or "").strip()
-            size_gb = _parse_size_to_gb(dev.get("size", "0"))
+                # Find mountpoint from first child partition
+                children = dev.get("children", [])
+                mountpoint = ""
+                fstype = ""
+                if children:
+                    mountpoint = children[0].get("mountpoint") or ""
+                    fstype = children[0].get("fstype") or ""
 
-            # Find mountpoint from first child partition
-            children = dev.get("children", [])
-            mountpoint = ""
-            fstype = ""
-            if children:
-                mountpoint = children[0].get("mountpoint") or ""
-                fstype = children[0].get("fstype") or ""
-
-            devices.append(USBDevice(
-                drive_letter=f"/dev/{name}",
-                volume_name=model or f"/dev/{name}",
-                drive_type="USB Device",
-                size_gb=size_gb,
-                serial_number="",
-                interface="USB",
-                is_external=True,
-                filesystem=fstype,
-                model=model,
-            ))
+                devices.append(USBDevice(
+                    drive_letter=f"/dev/{name}",
+                    volume_name=model or f"/dev/{name}",
+                    drive_type="USB Drive",
+                    size_gb=size_gb,
+                    serial_number="",
+                    interface="USB",
+                    is_external=True,
+                    filesystem=fstype,
+                    model=model,
+                ))
     except Exception as e:
-        print(f"[USB] Linux detection error: {e}")
+        print(f"[USB] Linux lsblk detection note: {e}")
+
+    # 2. Docker / WSL Mount points detection fallback
+    try:
+        if os.path.exists('/.dockerenv') or os.path.exists('/mnt'):
+            for entry in os.scandir('/mnt'):
+                if entry.is_dir() and entry.name.lower() in ['c', 'd', 'e', 'f', 'g', 'h', 'i', 'usb', 'thumb']:
+                    drive_letter = f"{entry.name.upper()}:\\"
+                    # Avoid duplicates
+                    if any(d.drive_letter == drive_letter or d.drive_letter == entry.path for d in devices):
+                        continue
+                        
+                    # Calculate disk usage dynamically using psutil
+                    try:
+                        import psutil
+                        usage = psutil.disk_usage(entry.path)
+                        size_gb = round(usage.total / (1024 ** 3), 2)
+                    except Exception:
+                        size_gb = 0.0
+
+                    devices.append(USBDevice(
+                        drive_letter=drive_letter, # Maintain Windows drive letter formatting for client convenience
+                        volume_name=f"Mounted Drive ({entry.name.upper()})",
+                        drive_type="USB Drive" if entry.name.lower() != 'c' else "HDD",
+                        size_gb=size_gb,
+                        serial_number=f"MAPPED-{entry.name.upper()}",
+                        interface="USB",
+                        is_external=True,
+                        filesystem="Auto-Detect",
+                        model=f"WSL/Docker Bind Mount ({entry.path})"
+                    ))
+    except Exception as e:
+        print(f"[USB] Docker fallback mount scan error: {e}")
+
     return devices
 
 

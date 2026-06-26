@@ -1,0 +1,67 @@
+[
+  {
+    "_id": "7c964ee9-f930-4a25-be8d-cbbcd25b80ad",
+    "username": "admin",
+    "email": "admin@example.com",
+    "password_hash": "beda4171$0ed1c5560ff54c38952e87dff13bf19e4908070170e0eeef565088f2f4b59ed6",
+    "role": "admin",
+    "first_name": "Admin",
+    "last_name": "User",
+    "is_active": true,
+    "is_staff": true,
+    "date_joined": "2026-05-02T08:28:03.854173+00:00",
+    "last_login": "2026-06-24T09:14:56.955532+00:00"
+  },
+  {
+    "_id": "165d8951-a2bb-43c3-a677-df829d3db32f",
+    "username": "Felix",
+    "email": "kwabenaboakyefelix8@gmail.com",
+    "password_hash": "92e7deaf$d9b3a4b77875e0bb7ccd6284691ec35d5155eaa63b818f6a9479ee1ad52ffb4e",
+    "role": "analyst",
+    "first_name": "Felix",
+    "last_name": "Boakye",
+    "is_active": true,
+    "is_staff": false,
+    "date_joined": "2026-05-24T03:11:58.142336+00:00",
+    "last_login": "2026-05-24T03:40:38.812398+00:00"
+  },
+  {
+    "_id": "d9804a38-b971-402b-8984-55c685eda2a7",
+    "username": "kofi",
+    "email": "willyoubemypersonalperson@gmail.com",
+    "password_hash": "ec7650b0$ed18ed46446f8d82febb499d8bc1e48f37e1c50594e43541bd3d98578212f583",
+    "role": "investigator",
+    "first_name": "Xilef",
+    "last_name": "Boakye",
+    "is_active": true,
+    "is_staff": false,
+    "date_joined": "2026-05-24T03:17:44.570837+00:00",
+    "last_login": "2026-05-24T03:38:55.644720+00:00"
+  },
+  {
+    "_id": "5d411f0d-12ae-41f6-94e5-84216bda0bd5",
+    "username": "soc_analyst",
+    "email": "soc_analyst@aidfirs.local",
+    "password_hash": "",
+    "role": "analyst",
+    "first_name": "SOC",
+    "last_name": "Analyst",
+    "is_active": true,
+    "is_staff": false,
+    "date_joined": "2026-06-25T04:35:32.045301+00:00",
+    "last_login": "2026-06-25T04:35:32.085102+00:00"
+  },
+  {
+    "_id": "ee9c5c8c-bd14-4b96-8687-032936ca1a66",
+    "username": "testuser_6a3cb014bff48ddf1a7232d1",
+    "email": "testuser_6a3cb014bff48ddf1a7232d1@test.com",
+    "password_hash": "15c76c7f$8ec6bd2d6e2fff0a907f5f7d81fd596b12f81130c9c9355767cc7a2ac3e3ea4d",
+    "role": "analyst",
+    "first_name": "",
+    "last_name": "",
+    "is_active": true,
+    "is_staff": false,
+    "date_joined": "2026-06-25T04:35:32.218932+00:00",
+    "last_login": null
+  }
+]

@@ -7,6 +7,7 @@ urlpatterns = [
         'get': 'list',
         'post': 'create'
     }), name='case-list'),
+    path('search/', CaseViewSet.as_view({'get': 'search'}), name='global-search'),
     path('<str:pk>/', CaseViewSet.as_view({
         'get': 'retrieve',
         'put': 'update',

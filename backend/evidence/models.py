@@ -3,6 +3,11 @@ from datetime import datetime, timezone
 from bson import ObjectId
 import hashlib
 import uuid
+import json
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EVIDENCE_FILE = os.path.join(BASE_DIR, 'evidence.json')
 
 class Evidence:
     """
@@ -128,8 +133,22 @@ class Evidence:
             "metadata": {}
         }
         
-        result = evidence_collection.insert_one(evidence_doc)
-        evidence_doc["_id"] = result.inserted_id
+        if evidence_collection is not None:
+            result = evidence_collection.insert_one(evidence_doc)
+            evidence_doc["_id"] = result.inserted_id
+        else:
+
+            evidence_doc["_id"] = str(uuid.uuid4())
+            evidence_data = []
+            if os.path.exists(EVIDENCE_FILE):
+                try:
+                    with open(EVIDENCE_FILE, 'r') as f:
+                        evidence_data = json.load(f)
+                except:
+                    pass
+            evidence_data.append(evidence_doc)
+            with open(EVIDENCE_FILE, 'w') as f:
+                json.dump(evidence_data, f, indent=2, default=str)
         
         return Evidence.from_dict(evidence_doc)
     
@@ -138,12 +157,23 @@ class Evidence:
         """
         Get evidence by ID.
         """
-        try:
-            evidence_data = evidence_collection.find_one({"_id": ObjectId(evidence_id)})
-            if evidence_data:
-                return Evidence.from_dict(evidence_data)
-        except Exception:
-            pass
+        if evidence_collection is not None:
+            try:
+                evidence_data = evidence_collection.find_one({"_id": ObjectId(evidence_id)})
+                if evidence_data:
+                    return Evidence.from_dict(evidence_data)
+            except Exception:
+                pass
+                
+        if os.path.exists(EVIDENCE_FILE):
+            try:
+                with open(EVIDENCE_FILE, 'r') as f:
+                    evidence_data = json.load(f)
+                    for e in evidence_data:
+                        if str(e.get('_id')) == str(evidence_id):
+                            return Evidence.from_dict(e)
+            except:
+                pass
         return None
     
     @staticmethod
@@ -151,31 +181,74 @@ class Evidence:
         """
         Get all evidence.
         """
-        evidence_list = evidence_collection.find().sort("collected_at", -1)
-        return [Evidence.from_dict(e) for e in evidence_list]
+        if evidence_collection is not None:
+            try:
+                evidence_list = evidence_collection.find().sort("collected_at", -1)
+                return [Evidence.from_dict(e) for e in evidence_list]
+            except:
+                pass
+                
+        if os.path.exists(EVIDENCE_FILE):
+            try:
+                with open(EVIDENCE_FILE, 'r') as f:
+                    evidence_data = json.load(f)
+                    evidence_data.sort(key=lambda x: x.get('collected_at', ''), reverse=True)
+                    return [Evidence.from_dict(e) for e in evidence_data]
+            except:
+                pass
+        return []
     
     @staticmethod
     def get_by_case(case_id):
         """
         Get all evidence for a specific case.
         """
-        evidence_list = evidence_collection.find({"case_id": case_id}).sort("collected_at", -1)
-        return [Evidence.from_dict(e) for e in evidence_list]
+        if evidence_collection is not None:
+            try:
+                evidence_list = evidence_collection.find({"case_id": case_id}).sort("collected_at", -1)
+                return [Evidence.from_dict(e) for e in evidence_list]
+            except:
+                pass
+                
+        if os.path.exists(EVIDENCE_FILE):
+            try:
+                with open(EVIDENCE_FILE, 'r') as f:
+                    evidence_data = json.load(f)
+                    filtered = [e for e in evidence_data if str(e.get('case_id')) == str(case_id)]
+                    filtered.sort(key=lambda x: x.get('collected_at', ''), reverse=True)
+                    return [Evidence.from_dict(e) for e in filtered]
+            except:
+                pass
+        return []
     
     @staticmethod
     def get_by_hash(hash_value):
         """
         Find evidence by any hash value.
         """
-        evidence_data = evidence_collection.find_one({
-            "$or": [
-                {"hash_md5": hash_value},
-                {"hash_sha1": hash_value},
-                {"hash_sha256": hash_value}
-            ]
-        })
-        if evidence_data:
-            return Evidence.from_dict(evidence_data)
+        if evidence_collection is not None:
+            try:
+                evidence_data = evidence_collection.find_one({
+                    "$or": [
+                        {"hash_md5": hash_value},
+                        {"hash_sha1": hash_value},
+                        {"hash_sha256": hash_value}
+                    ]
+                })
+                if evidence_data:
+                    return Evidence.from_dict(evidence_data)
+            except:
+                pass
+                
+        if os.path.exists(EVIDENCE_FILE):
+            try:
+                with open(EVIDENCE_FILE, 'r') as f:
+                    evidence_data = json.load(f)
+                    for e in evidence_data:
+                        if hash_value in (e.get('hash_md5'), e.get('hash_sha1'), e.get('hash_sha256')):
+                            return Evidence.from_dict(e)
+            except:
+                pass
         return None
     
     def update(self, **kwargs):
@@ -185,14 +258,65 @@ class Evidence:
         # Don't update _id
         update_data = {k: v for k, v in kwargs.items() if k != '_id'}
         
-        evidence_collection.update_one(
-            {"_id": self._id},
-            {"$set": update_data}
-        )
+        if evidence_collection is not None:
+            try:
+                evidence_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": update_data}
+                )
+            except:
+                pass
+        else:
+            if os.path.exists(EVIDENCE_FILE):
+                try:
+                    with open(EVIDENCE_FILE, 'r') as f:
+                        evidence_data = json.load(f)
+                    for e in evidence_data:
+                        if str(e.get('_id')) == str(self._id):
+                            for k, v in update_data.items():
+                                e[k] = v.isoformat() if isinstance(v, datetime) else v
+                            break
+                    with open(EVIDENCE_FILE, 'w') as f:
+                        json.dump(evidence_data, f, indent=2, default=str)
+                except:
+                    pass
         
         for key, value in kwargs.items():
             setattr(self, key, value)
         
+        return self
+
+    def save(self):
+        """
+        Save current evidence state to MongoDB.
+        """
+        update_data = self.to_dict()
+        if '_id' in update_data:
+            del update_data['_id']
+        
+        if evidence_collection is not None:
+            try:
+                evidence_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": update_data}
+                )
+            except:
+                pass
+        else:
+            if os.path.exists(EVIDENCE_FILE):
+                try:
+                    with open(EVIDENCE_FILE, 'r') as f:
+                        evidence_data = json.load(f)
+                    for i, e in enumerate(evidence_data):
+                        if str(e.get('_id')) == str(self._id):
+                            updated = self.to_dict()
+                            updated['_id'] = str(self._id)
+                            evidence_data[i] = updated
+                            break
+                    with open(EVIDENCE_FILE, 'w') as f:
+                        json.dump(evidence_data, f, indent=2, default=str)
+                except:
+                    pass
         return self
     
     def mark_analyzed(self):
@@ -205,10 +329,20 @@ class Evidence:
         """
         Add a tag to evidence.
         """
-        evidence_collection.update_one(
-            {"_id": self._id},
-            {"$addToSet": {"tags": tag}}
-        )
+        if evidence_collection is not None:
+            try:
+                evidence_collection.update_one(
+                    {"_id": self._id},
+                    {"$addToSet": {"tags": tag}}
+                )
+            except:
+                pass
+        else:
+            if tag not in self.tags:
+                self.tags.append(tag)
+                self.save()
+                return self
+        
         if tag not in self.tags:
             self.tags.append(tag)
         return self
@@ -217,24 +351,59 @@ class Evidence:
         """
         Add metadata to evidence.
         """
-        evidence_collection.update_one(
-            {"_id": self._id},
-            {"$set": {f"metadata.{key}": value}}
-        )
+        if evidence_collection is not None:
+            try:
+                evidence_collection.update_one(
+                    {"_id": self._id},
+                    {"$set": {f"metadata.{key}": value}}
+                )
+            except:
+                pass
+        
         self.metadata[key] = value
+        if evidence_collection is None:
+            self.save()
         return self
     
     def delete(self):
         """
         Delete evidence from MongoDB.
         """
-        evidence_collection.delete_one({"_id": self._id})
+        if evidence_collection is not None:
+            try:
+                evidence_collection.delete_one({"_id": self._id})
+            except:
+                pass
+        else:
+            if os.path.exists(EVIDENCE_FILE):
+                try:
+                    with open(EVIDENCE_FILE, 'r') as f:
+                        evidence_data = json.load(f)
+                    evidence_data = [e for e in evidence_data if str(e.get('_id')) != str(self._id)]
+                    with open(EVIDENCE_FILE, 'w') as f:
+                        json.dump(evidence_data, f, indent=2, default=str)
+                except:
+                    pass
     
     @staticmethod
     def from_dict(data):
         """
         Create Evidence instance from dictionary.
         """
+        collected_at = data.get('collected_at')
+        if isinstance(collected_at, str):
+            try:
+                collected_at = datetime.fromisoformat(collected_at.replace('Z', '+00:00'))
+            except:
+                pass
+                
+        analyzed_at = data.get('analyzed_at')
+        if isinstance(analyzed_at, str):
+            try:
+                analyzed_at = datetime.fromisoformat(analyzed_at.replace('Z', '+00:00'))
+            except:
+                pass
+
         return Evidence(
             _id=data.get('_id'),
             case_id=data.get('case_id'),
@@ -248,8 +417,8 @@ class Evidence:
             description=data.get('description', ''),
             collector_id=data.get('collector_id', ''),
             status=data.get('status', 'collected'),
-            collected_at=data.get('collected_at'),
-            analyzed_at=data.get('analyzed_at'),
+            collected_at=collected_at,
+            analyzed_at=analyzed_at,
             tags=data.get('tags', []),
             metadata=data.get('metadata', {})
         )

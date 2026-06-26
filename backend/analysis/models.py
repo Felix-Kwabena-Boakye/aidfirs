@@ -95,6 +95,8 @@ class AnalysisResult:
         """
         Get all analysis results.
         """
+        if analysis_results_collection is None:
+            return []
         results = analysis_results_collection.find().sort("analyzed_at", -1)
         return [AnalysisResult.from_dict(a) for a in results]
     
@@ -137,6 +139,20 @@ class AnalysisResult:
         for key, value in kwargs.items():
             setattr(self, key, value)
         
+        return self
+
+    def save(self):
+        """
+        Save current analysis result state to MongoDB.
+        """
+        update_data = self.to_dict()
+        if '_id' in update_data:
+            del update_data['_id']
+        
+        analysis_results_collection.update_one(
+            {"_id": self._id},
+            {"$set": update_data}
+        )
         return self
     
     def complete(self):

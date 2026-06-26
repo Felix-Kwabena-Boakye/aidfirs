@@ -29,7 +29,7 @@ class ClaudeClient:
 
     def is_configured(self) -> bool:
         """Check if Claude API is properly configured."""
-        return self.api_key is not None and self.client is not None
+        return self.api_key is not None and self.api_key != "mock" and self.client is not None
 
     def summarize(self, text: str, max_words: int = 60) -> str:
         """
@@ -50,8 +50,8 @@ class ClaudeClient:
 
         try:
             message = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=150,
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=300,
                 messages=[
                     {
                         "role": "user",
@@ -96,8 +96,8 @@ class ClaudeClient:
 
         try:
             message = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=500,
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=800,
                 messages=[
                     {
                         "role": "user",
@@ -205,8 +205,8 @@ Text to analyze:
                 context += f"\n\nText excerpt: {text[:1000]}"
             
             message = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=300,
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=500,
                 messages=[
                     {
                         "role": "user",
@@ -265,8 +265,8 @@ Return ONLY a JSON object with these keys:
         
         try:
             message = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=1000,
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=2000,
                 messages=[
                     {
                         "role": "user",
