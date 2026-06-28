@@ -59,4 +59,4 @@ COPY backend/ /app/backend/
 EXPOSE 8000
 
 # Start server (Render compatible)
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} backend.wsgi:application"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} backend.backend.wsgi:application"]
