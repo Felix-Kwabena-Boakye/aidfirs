@@ -1,10 +1,14 @@
-# AIDFIRS Platform Backend - Dockerfile
+# AIDFIRS Platform Backend - Production Dockerfile
+
 FROM ubuntu:22.04
 
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install core packages and repository utilities
+# Ensure Python output is logged properly
+ENV PYTHONUNBUFFERED=1
+
+# Install core system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     gnupg2 \
@@ -12,10 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Add GIFT PPA for Plaso
+# Add GIFT PPA for Plaso (forensic timeline tools)
 RUN add-apt-repository -y ppa:gift/stable
 
-# Install forensic tools, Python 3.11, and build dependencies
+# Install Python + forensic dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
@@ -31,20 +35,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure python/pip symlinks
+# Make python default point to python3.11
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
     ln -sf /usr/bin/python3.11 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip
 
+# Set working directory
 WORKDIR /app
 
-# Install Python requirements
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+# Upgrade pip (important for Render builds)
+RUN pip install --upgrade pip setuptools wheel
 
-# Copy backend source
+# Copy requirements first (for caching)
+COPY backend/requirements.txt /app/requirements.txt
+
+# Install dependencies (FIXED)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy full backend code
 COPY backend/ /app/backend/
 
+# Expose port
 EXPOSE 8000
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} backend.wsgi:application"]  
+# Start server (Render compatible)
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} backend.wsgi:application"]
