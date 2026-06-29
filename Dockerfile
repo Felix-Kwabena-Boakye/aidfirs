@@ -1,26 +1,17 @@
-# AIDFIRS Platform Backend - Production Dockerfile
-
 FROM ubuntu:22.04
 
-# Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Ensure Python output is logged properly
 ENV PYTHONUNBUFFERED=1
 
-# Install core system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     software-properties-common \
     gnupg2 \
     curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
-# Add GIFT PPA for Plaso (forensic timeline tools)
 RUN add-apt-repository -y ppa:gift/stable
 
-# Install Python + forensic dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-dev \
     python3-pip \
@@ -32,31 +23,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     plaso-tools \
     ffmpeg \
     libmagic1 \
-    redis-tools \
-    && rm -rf /var/lib/apt/lists/*
+    redis-tools
 
-# Make python default point to python3.11
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3
+RUN ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# Set working directory
+# Django project root
 WORKDIR /app
 
-# Upgrade pip (important for Render builds)
+# Copy backend project
+COPY backend/ .
+
 RUN pip install --upgrade pip setuptools wheel
 
-# Copy requirements first (for caching)
-COPY backend/requirements.txt /app/requirements.txt
-
-# Install dependencies (FIXED)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy full backend code
-COPY backend/ /app/backend/
+ENV PYTHONPATH=/app
 
-# Expose port
 EXPOSE 8000
 
-# Start server (Render compatible)
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} backend.backend.wsgi:application"]
+CMD ["sh","-c","gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]
