@@ -3,13 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000;">
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <!-- 🚨 FIXED CSP FOR PRODUCTION + GOOGLE + RENDER + VERCEL -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com;
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https:;
+        connect-src 'self' http://127.0.0.1:8000 https://aidfirs.onrender.com https://accounts.google.com https://oauth2.googleapis.com ws:;
+        frame-src https://accounts.google.com;
+      "
+    />
+
     <meta name="theme-color" content="#0f0f23" />
     <title>IbraHim - Digital Forensics System</title>
   </head>
+
   <body class="bg-gray-900 text-white antialiased">
     <div id="root"></div>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
