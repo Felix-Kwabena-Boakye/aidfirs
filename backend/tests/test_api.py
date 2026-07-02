@@ -7,8 +7,15 @@ import os
 import sys
 import requests
 import time
+import pytest
 
-API_BASE_URL = 'http://127.0.0.1:8000/api'
+API_BASE_URL = os.getenv('VITE_API_BASE_URL') or 'http://127.0.0.1:8000/api'
+
+server_not_running = False
+try:
+    requests.get(f"{API_BASE_URL}/accounts/", timeout=1)
+except requests.exceptions.ConnectionError:
+    server_not_running = True
 
 
 def test_server_running():
@@ -29,6 +36,7 @@ def test_server_running():
 
 
 
+@pytest.mark.skipif(server_not_running, reason="Django server is not running")
 def test_login_endpoint():
     """Test login endpoint."""
     print("\n=== Testing Login Endpoint ===")
@@ -80,6 +88,7 @@ def test_login_endpoint():
 
 
 
+@pytest.mark.skipif(server_not_running, reason="Django server is not running")
 def test_cases_api(token=None):
     """Test cases API endpoints."""
     print("\n=== Testing Cases API ===")
@@ -127,6 +136,7 @@ def test_cases_api(token=None):
 
 
 
+@pytest.mark.skipif(server_not_running, reason="Django server is not running")
 def test_evidence_api(token=None):
     """Test evidence API endpoints."""
     print("\n=== Testing Evidence API ===")
@@ -147,6 +157,7 @@ def test_evidence_api(token=None):
 
 
 
+@pytest.mark.skipif(server_not_running, reason="Django server is not running")
 def test_analysis_api(token=None):
     """Test analysis API endpoints."""
     print("\n=== Testing Analysis API ===")
@@ -168,6 +179,7 @@ def test_analysis_api(token=None):
 
 
 
+@pytest.mark.skipif(server_not_running, reason="Django server is not running")
 def test_devices_api(token=None):
     """Test devices API endpoints."""
     print("\n=== Testing Devices API ===")

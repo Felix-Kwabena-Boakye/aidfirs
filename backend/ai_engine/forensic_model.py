@@ -18,7 +18,7 @@ class ForensicModel:
         self.n_layers = n_layers
         self.experts = experts
         self.is_warp_enabled = True
-        self.ollama_url = "http://localhost:11434/api/chat"
+        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
         self.anthropic_key = getattr(settings, 'ANTHROPIC_API_KEY', os.getenv('ANTHROPIC_API_KEY'))
         self.system_prompt = """
         I am the Forensic AI Assistant, the core intelligence of the AI Digital Forensics System. 

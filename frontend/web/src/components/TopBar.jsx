@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, User, ChevronDown, Search, LogOut, Shield, AlertTriangle, FileQuestion, X, FolderOpen, FileCode, Cpu } from 'lucide-react'
 import { Menu } from '@headlessui/react'
-import { casesAPI } from '../api'
+import api, { casesAPI } from '../api'
 import { toast } from 'sonner'
 
 const notifications = [
@@ -37,7 +37,8 @@ export default function TopBar() {
     setSearchResults(null);
     setShowResults(true);
 
-    const requestUrl = `http://127.0.0.1:8000/api/cases/search/?q=${encodeURIComponent(query)}`;
+    const baseUrl = api.defaults.baseURL || 'http://127.0.0.1:8000/api';
+    const requestUrl = `${baseUrl}/cases/search/?q=${encodeURIComponent(query)}`;
     console.log(`[SEARCH] API request URL: ${requestUrl}`);
     console.log(`[SEARCH] Request payload: None (GET request)`);
 

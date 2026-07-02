@@ -30,9 +30,12 @@ def test_stream():
     print("Response Status Code:", response.status_code)
     print("Content Type:", response.headers.get('Content-Type'))
     
-    print("\nStreaming Content:")
-    for content in response.streaming_content:
-        print(content.decode('utf-8'))
+    if hasattr(response, 'streaming_content'):
+        print("\nStreaming Content:")
+        for content in response.streaming_content:
+            print(content.decode('utf-8'))
+    else:
+        print("Non-streaming Response Data:", getattr(response, 'data', None))
 
 if __name__ == '__main__':
     test_stream()

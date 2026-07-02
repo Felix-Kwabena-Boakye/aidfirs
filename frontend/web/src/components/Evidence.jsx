@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { evidenceAPI, casesAPI, devicesAPI } from '../api';
+import api, { evidenceAPI, casesAPI, devicesAPI } from '../api';
 import { 
   Shield, 
   AlertTriangle, 
@@ -186,7 +186,8 @@ export default function Evidence() {
     setSelectedRecoveredFiles([]);
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/evidence/${id}/recover-and-analyze/`, {
+      const baseUrl = api.defaults.baseURL || 'http://127.0.0.1:8000/api';
+      const response = await fetch(`${baseUrl}/evidence/${id}/recover-and-analyze/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
