@@ -58,6 +58,7 @@ def custom_exception_handler(exc, context):
 
         # Re-format DRF response to include detailed structured error information
         response.data = {
+            "success": False,
             "error": "Forbidden" if response.status_code == 403 else "Unauthorized",
             "message": message,
             "code": code,

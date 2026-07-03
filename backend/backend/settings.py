@@ -28,13 +28,14 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-'accounts.middleware.AuditTrailMiddleware',
+    'accounts.middleware.AuditTrailMiddleware',
 ]
 ROOT_URLCONF = 'backend.urls'
 TEMPLATES = [{
@@ -72,6 +73,17 @@ load_dotenv()
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom MongoDB authentication - no AUTH_USER_MODEL since we use MongoDB directly

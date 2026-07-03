@@ -171,14 +171,25 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        return request.user
+        user_id = self.kwargs.get('user_id')
+        if user_id:
+            return UserService.get_user_by_id(user_id)
+        return self.request.user
 
     def update(self, request, *args, **kwargs):
-        user = request.user
+        user = self.get_object()
+        if not user:
+            return error("User not found", 404)
+
+        if str(user._id) != str(request.user._id) and request.user.role != 'admin':
+            return error("You can only update your own profile", 403)
 
         # prevent role abuse
-        if "role" in request.data and user.role != "admin":
-            return error("You cannot change role", 403)
+        if "role" in request.data:
+            if request.user.role != 'admin':
+                return error("You cannot change role", 403)
+            if str(user._id) == str(request.user._id) and request.data.get('role') != 'admin':
+                return error("You cannot change your own admin role", 403)
 
         if "first_name" in request.data:
             user.first_name = request.data["first_name"]
@@ -189,7 +200,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         if "email" in request.data:
             user.email = request.data["email"]
 
-        if "role" in request.data and user.role == "admin":
+        if "role" in request.data and request.user.role == "admin":
             allowed_roles = ["admin", "analyst", "investigator"]
             if request.data["role"] in allowed_roles:
                 user.role = request.data["role"]
@@ -361,10 +372,20 @@ class AuditLogView(APIView):
         else:
             logs = AuditLog.get_logs(user_id=str(request.user._id), limit=100)
 
+        serialized_logs = []
+        for log in logs:
+            log_copy = log.copy() if hasattr(log, 'copy') else log
+            if isinstance(log_copy, dict):
+                if '_id' in log_copy:
+                    log_copy['_id'] = str(log_copy['_id'])
+                if 'timestamp' in log_copy and hasattr(log_copy['timestamp'], 'isoformat'):
+                    log_copy['timestamp'] = log_copy['timestamp'].isoformat()
+            serialized_logs.append(log_copy)
+
         return Response({
             "success": True,
-            "logs": logs,
-            "count": len(logs)
+            "logs": serialized_logs,
+            "count": len(serialized_logs)
         })
 
 
@@ -390,8 +411,10 @@ class GoogleOAuthView(APIView):
             client_id = getattr(settings, 'GOOGLE_OAUTH_CLIENT_ID', '')
             client_secret = getattr(settings, 'GOOGLE_OAUTH_CLIENT_SECRET', '')
             
+            import sys
+            is_testing = 'test' in sys.argv or 'pytest' in sys.modules or getattr(settings, 'TESTING', False)
             # Offline mock bypass for easy setup/dev testing if client credentials are not configured
-            if code == "mock_code_for_testing" or not client_id or not client_secret:
+            if (settings.DEBUG or is_testing) and (code == "mock_code_for_testing" or not client_id or not client_secret):
                 email = "soc_analyst@aidfirs.local"
                 user = UserService.get_user_by_email(email)
                 if not user:
@@ -484,3 +507,16 @@ class GoogleOAuthView(APIView):
 
         except Exception as e:
             return error(str(e), 401)
+
+
+class ResetUserPasswordView(APIView):
+    """
+    Deprecated: admin-driven password reset.
+    Requirement: admins must only approve/disapprove users.
+    Therefore this endpoint is disabled.
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, user_id):
+        return error('Admin password resets are disabled. Admins may only activate/deactivate users.', 403)
+
