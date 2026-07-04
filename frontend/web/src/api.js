@@ -1,10 +1,11 @@
+import axios from "axios";
+
 const getApiBaseUrl = () => {
-  // Use the environment variable if it exists (Vercel/Production)
+  // Vercel / Production environment variable
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
 
-  // Support an alternative variable name if needed
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
@@ -29,3 +30,5 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+export default api;
