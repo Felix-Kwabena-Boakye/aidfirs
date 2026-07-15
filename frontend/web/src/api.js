@@ -231,6 +231,9 @@ export const devicesAPI = {
    ANALYSIS
 ========================================================= */
 export const analysisAPI = {
+  // =========================
+  // CRUD
+  // =========================
   getAnalyses: () =>
     api.get("/analysis/"),
 
@@ -240,16 +243,18 @@ export const analysisAPI = {
   getAnalysis: (id) =>
     api.get(`/analysis/${id}/`),
 
-  classify: (data) =>
-    api.post("/analysis/classify/", {
-      forensic_data: data,
-    }),
+  updateAnalysis: (id, data) =>
+    api.patch(`/analysis/${id}/`, data),
 
-  detectAnomalies: (data) =>
-    api.post("/analysis/detect-anomalies/", {
-      forensic_data: data,
-    }),
+  deleteAnalysis: (id) =>
+    api.delete(`/analysis/${id}/`),
 
+  completeAnalysis: (id) =>
+    api.post(`/analysis/${id}/complete/`),
+
+  // =========================
+  // AI Assistant
+  // =========================
   chatWithAssistant: (
     case_context,
     forensic_data,
@@ -261,6 +266,44 @@ export const analysisAPI = {
       forensic_data,
       message,
       history,
+    }),
+
+  classify: (forensic_data) =>
+    api.post("/analysis/classify/", {
+      forensic_data,
+    }),
+
+  detectAnomalies: (forensic_data) =>
+    api.post("/analysis/detect-anomalies/", {
+      forensic_data,
+    }),
+
+  generateReport: (data) =>
+    api.post("/analysis/generate-report/", data),
+
+  evidenceSuggestions: (case_context) =>
+    api.post("/analysis/evidence-suggestions/", {
+      case_context,
+    }),
+
+  // =========================
+  // AI Oracle
+  // =========================
+  trainModel: () =>
+    api.post("/analysis/train-model/"),
+
+  getModelInfo: () =>
+    api.get("/analysis/model-info/"),
+
+  predictRecoverability: (data) =>
+    api.post("/analysis/predict-recoverability/", data),
+
+  // =========================
+  // System Agent
+  // =========================
+  systemExecute: (instruction) =>
+    api.post("/analysis/system-execute/", {
+      instruction,
     }),
 };
 
