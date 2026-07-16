@@ -12,6 +12,7 @@ Detection Strategy (Linux):
   2. /sys/bus/usb/devices               — confirm USB bus attachment
 """
 
+import os
 import json
 import subprocess
 import threading
