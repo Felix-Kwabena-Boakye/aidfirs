@@ -146,7 +146,7 @@ DATABASES = {
 # STATIC FILES
 # =========================
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
@@ -160,19 +160,14 @@ STORAGES = {
 
     },
 
-
     "staticfiles": {
 
         "BACKEND":
-        "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "whitenoise.storage.CompressedStaticFilesStorage",
 
     },
 
 }
-
-
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 
