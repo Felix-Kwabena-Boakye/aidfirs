@@ -119,6 +119,9 @@ export const authAPI = {
    USERS API
 ========================================================= */
 export const usersAPI = {
+  // =========================
+  // Users
+  // =========================
   getUsers: () =>
     api.get("/accounts/users/"),
 
@@ -126,10 +129,34 @@ export const usersAPI = {
     api.post("/accounts/users/create/", data),
 
   updateUser: (id, data) =>
-    api.patch(`/accounts/users/${id}/`, data),
+    api.patch(`/accounts/profile/${id}/`, data),
 
   deleteUser: (id) =>
     api.delete(`/accounts/users/${id}/`),
+
+  // =========================
+  // Approve / Activate
+  // =========================
+  activateUser: (id) =>
+    api.post(`/accounts/users/${id}/activate/`, {
+      action: "activate",
+    }),
+
+  // =========================
+  // Deactivate
+  // =========================
+  deactivateUser: (id) =>
+    api.post(`/accounts/users/${id}/deactivate/`, {
+      action: "deactivate",
+    }),
+
+  // =========================
+  // Reset Password
+  // =========================
+  resetPassword: (id, password) =>
+    api.post(`/accounts/users/${id}/reset-password/`, {
+      password,
+    }),
 };
 
 /* =========================================================
