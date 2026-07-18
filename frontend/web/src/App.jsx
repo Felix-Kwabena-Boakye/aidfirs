@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import Devices from "./components/Devices";
 import Cases from "./components/Cases";
 import Evidence from "./components/Evidence";
+import RecoveredFiles from "./components/RecoveredFiles";
 import Analysis from "./components/Analysis";
 import Reports from "./components/Reports";
 import Settings from "./components/Settings";
@@ -58,6 +59,14 @@ export default function App() {
           </RoleGuard>
         }>
           <Route index element={<Evidence />} />
+        </Route>
+
+        <Route path="/recovered-files" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<RecoveredFiles />} />
         </Route>
 
         <Route path="/analysis" element={

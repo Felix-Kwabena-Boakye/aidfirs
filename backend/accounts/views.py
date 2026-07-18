@@ -71,6 +71,53 @@ class RegisterView(generics.CreateAPIView):
 
 
 # =========================
+# AGENT REGISTER
+# =========================
+class AgentRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        import uuid
+        hostname = request.data.get("hostname", "unknown").strip()
+        os_name = request.data.get("os", "unknown").strip()
+        if not hostname:
+            hostname = "unknown"
+        
+        # Clean hostname for username compatibility
+        clean_hostname = "".join(c for c in hostname if c.isalnum() or c in ("-", "_")).lower()
+        username = f"agent_{clean_hostname}"
+        email = f"{username}@aidfirs.local"
+
+        user = UserService.get_user_by_username(username)
+        if not user:
+            user = UserService.get_user_by_email(email)
+
+        if not user:
+            try:
+                user = UserService.create_user(
+                    username=username,
+                    email=email,
+                    password=str(uuid.uuid4()),
+                    role="investigator",
+                    first_name="AIDFIRS",
+                    last_name=f"Agent ({os_name})",
+                    is_active=True
+                )
+            except Exception as e:
+                return Response({"success": False, "error": f"Failed to register agent: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        access, refresh = UserService.generate_tokens(user)
+        return Response({
+            "success": True,
+            "message": "Agent registered/authenticated successfully",
+            "access": access,
+            "refresh": refresh,
+            "agent_id": str(user._id),
+            "username": user.username
+        })
+
+
+# =========================
 # LOGIN
 # =========================
 @method_decorator(csrf_exempt, name='dispatch')

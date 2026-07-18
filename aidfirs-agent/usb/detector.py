@@ -1,23 +1,9 @@
-"""
-USB Device Detector — uses the Windows/Linux storage driver stack directly.
-
-Detection Strategy (Windows):
-  1. psutil.disk_partitions()           — get all mounted drive letters + fstype
-  2. ctypes Win32 GetDriveTypeW()       — confirm DRIVE_REMOVABLE (type 2 = USB pendrive)
-  3. PowerShell Get-Disk pipeline       — match BusType=USB to drive letters for metadata
-  4. WMI Win32_DiskDrive WHERE USB      — enrich with serial number and model
-
-Detection Strategy (Linux):
-  1. lsblk -J                           — enumerate block devices with size & mountpoint
-  2. /sys/bus/usb/devices               — confirm USB bus attachment
-"""
-
-import os
 import json
 import subprocess
 import threading
 import time
 import platform
+import os
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
 
@@ -33,10 +19,6 @@ try:
 except ImportError:
     CTYPES_AVAILABLE = False
 
-
-# ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
 
 class USBDevice:
     """Represents a detected USB/removable drive."""
@@ -59,35 +41,24 @@ class USBDevice:
 
     def to_dict(self) -> Dict:
         return {
+            "device_name": self.volume_name or self.model or "USB Drive",
+            "model": self.model or "Unknown Model",
+            "serial_number": self.serial_number or "UNKNOWN",
+            "filesystem": self.filesystem or "Auto-Detect",
+            "capacity": self.size_gb,
+            "mount_point": self.drive_letter,
             "drive_letter": self.drive_letter,
-            "volume_name": self.volume_name,
+            "connected_time": self.connected_at.isoformat() if self.connected_at else None,
+            # Backward compatibility fields for Django views:
             "drive_type": self.drive_type,
             "size_gb": self.size_gb,
-            "serial_number": self.serial_number,
-            "interface": self.interface,
-            "is_external": self.is_external,
-            "filesystem": self.filesystem,
-            "model": self.model,
+            "volume_name": self.volume_name or self.model or "USB Drive",
             "connected_at": self.connected_at.isoformat() if self.connected_at else None,
+            "source": "AIDFIRS Agent"
         }
 
 
-# ---------------------------------------------------------------------------
-# Windows detection
-# ---------------------------------------------------------------------------
-
 def _get_drive_type_win32(drive_letter: str) -> int:
-    """
-    Call Win32 GetDriveTypeW directly via ctypes.
-    Return values:
-      0 = DRIVE_UNKNOWN
-      1 = DRIVE_NO_ROOT_DIR
-      2 = DRIVE_REMOVABLE  <-- USB pendrives, SD cards
-      3 = DRIVE_FIXED      <-- Internal/external HDDs/SSDs
-      4 = DRIVE_REMOTE
-      5 = DRIVE_CDROM
-      6 = DRIVE_RAMDISK
-    """
     if not CTYPES_AVAILABLE:
         return 0
     try:
@@ -98,16 +69,11 @@ def _get_drive_type_win32(drive_letter: str) -> int:
 
 
 def _get_removable_drives_psutil() -> List[Dict]:
-    """
-    Use psutil.disk_partitions() to get all mounted drives.
-    Returns list of dicts with 'letter', 'fstype', 'opts'.
-    """
     drives = []
     if not PSUTIL_AVAILABLE:
         return drives
     try:
         for part in psutil.disk_partitions(all=False):
-            # On Windows, mountpoint is like 'C:\\' — extract letter
             mp = part.mountpoint.rstrip("\\").rstrip("/")
             letter = mp.rstrip(":") if mp.endswith(":") else mp
             if not letter:
@@ -124,7 +90,6 @@ def _get_removable_drives_psutil() -> List[Dict]:
 
 
 def _get_disk_usage_gb(drive_letter: str) -> float:
-    """Get total disk size in GB using psutil."""
     if not PSUTIL_AVAILABLE:
         return 0.0
     try:
@@ -135,16 +100,6 @@ def _get_disk_usage_gb(drive_letter: str) -> float:
 
 
 def _get_usb_metadata_powershell() -> List[Dict]:
-    """
-    Use the native Windows Storage Stack (not wmic) to find USB drives.
-
-    Get-Disk lists physical disks with BusType.
-    Get-Partition maps them to drive letters.
-    Get-Volume gives volume label and filesystem.
-
-    Returns list of dicts: letter, volume_name, filesystem, model,
-                            serial_number, size_gb, bus_type
-    """
     ps_script = r"""
 $results = @()
 try {
@@ -193,7 +148,6 @@ $results | ConvertTo-Json -Depth 3
 
 
 def _get_volume_label_win32(drive_letter: str) -> str:
-    """Get volume label for a drive using GetVolumeInformationW."""
     if not CTYPES_AVAILABLE:
         return ""
     try:
@@ -209,26 +163,16 @@ def _get_volume_label_win32(drive_letter: str) -> str:
         return ""
 
 
-def get_usb_devices() -> List["USBDevice"]:
-    """
-    Main entry point. Detects USB/removable drives using the OS storage driver.
-    Works on Windows and Linux.
-    """
+def get_usb_devices() -> List[USBDevice]:
     if platform.system() != "Windows":
         return _get_linux_usb_devices()
-
     return _get_windows_usb_devices()
 
 
-def _get_windows_usb_devices() -> List["USBDevice"]:
-    """Detect USB drives on Windows using multi-strategy approach."""
+def _get_windows_usb_devices() -> List[USBDevice]:
     devices: List[USBDevice] = []
     seen_letters: set = set()
 
-    # ------------------------------------------------------------------
-    # Strategy 1: PowerShell Get-Disk pipeline (most reliable for USB)
-    # This queries the actual Windows storage driver (BusType = USB).
-    # ------------------------------------------------------------------
     ps_devices = _get_usb_metadata_powershell()
     for item in ps_devices:
         letter = str(item.get("Letter", "")).strip().upper()
@@ -242,13 +186,10 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
         model = item.get("Model", "")
         serial = str(item.get("SerialNumber") or "").strip()
 
-        # Determine drive type from BusType and size (HDD and USB Drive only)
         drive_type = "HDD"
         bus_lower = str(item.get("BusType", "")).lower()
         if "usb" in bus_lower or bus_lower == "7":
             drive_type = "USB Drive"
-        else:
-            drive_type = "HDD"
 
         devices.append(USBDevice(
             drive_letter=letter,
@@ -262,19 +203,13 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
             model=model,
         ))
 
-    # ------------------------------------------------------------------
-    # Strategy 2: psutil + ctypes Win32 GetDriveTypeW
-    # Catches USB pendrives that don't show up in Get-Disk (e.g. some
-    # older SD readers report as DRIVE_REMOVABLE but not BusType USB).
-    # ------------------------------------------------------------------
     all_drives = _get_removable_drives_psutil()
     for drv in all_drives:
         letter = drv["letter"].upper().rstrip(":")
         if letter in seen_letters:
-            continue  # already found via PowerShell
+            continue
 
         drive_type_code = _get_drive_type_win32(letter)
-        # 2 = DRIVE_REMOVABLE, 3 = DRIVE_FIXED
         if drive_type_code not in (2, 3):
             continue
 
@@ -298,12 +233,7 @@ def _get_windows_usb_devices() -> List["USBDevice"]:
     return devices
 
 
-# ---------------------------------------------------------------------------
-# Linux detection
-# ---------------------------------------------------------------------------
-
 def _parse_size_to_gb(size_str: str) -> float:
-    """Parse lsblk size string (e.g. '32G', '500M') to GB."""
     try:
         s = size_str.upper().strip()
         if "T" in s:
@@ -320,10 +250,7 @@ def _parse_size_to_gb(size_str: str) -> float:
 
 
 def _is_usb_block_device_linux(device_name: str) -> bool:
-    """Check /sys/bus/usb to confirm a block device is connected via USB."""
-    import os
     try:
-        # lsblk gives names like 'sdb'; check if any USB device links to it
         sys_path = f"/sys/block/{device_name}"
         if os.path.exists(sys_path):
             real_path = os.path.realpath(sys_path)
@@ -333,11 +260,8 @@ def _is_usb_block_device_linux(device_name: str) -> bool:
     return False
 
 
-def _get_linux_usb_devices() -> List["USBDevice"]:
-    """Detect USB drives on Linux using lsblk + /sys/bus/usb or container mount points."""
+def _get_linux_usb_devices() -> List[USBDevice]:
     devices = []
-    
-    # 1. Native lsblk scan
     try:
         result = subprocess.run(
             ["lsblk", "-o", "NAME,TYPE,MOUNTPOINT,SIZE,MODEL,FSTYPE", "-J"],
@@ -357,7 +281,6 @@ def _get_linux_usb_devices() -> List["USBDevice"]:
                 model = (dev.get("model") or "").strip()
                 size_gb = _parse_size_to_gb(dev.get("size", "0"))
 
-                # Find mountpoint from first child partition
                 children = dev.get("children", [])
                 mountpoint = ""
                 fstype = ""
@@ -377,19 +300,16 @@ def _get_linux_usb_devices() -> List["USBDevice"]:
                     model=model,
                 ))
     except Exception as e:
-        print(f"[USB] Linux lsblk detection note: {e}")
+        print(f"[USB] Linux lsblk error: {e}")
 
-    # 2. Docker / WSL Mount points detection fallback
+    # Docker/WSL Fallback
     try:
         if os.path.exists('/.dockerenv') or os.path.exists('/mnt'):
             for entry in os.scandir('/mnt'):
                 if entry.is_dir() and entry.name.lower() in ['c', 'd', 'e', 'f', 'g', 'h', 'i', 'usb', 'thumb']:
                     drive_letter = f"{entry.name.upper()}:\\"
-                    # Avoid duplicates
                     if any(d.drive_letter == drive_letter or d.drive_letter == entry.path for d in devices):
                         continue
-                        
-                    # Calculate disk usage dynamically using psutil
                     try:
                         import psutil
                         usage = psutil.disk_usage(entry.path)
@@ -398,7 +318,7 @@ def _get_linux_usb_devices() -> List["USBDevice"]:
                         size_gb = 0.0
 
                     devices.append(USBDevice(
-                        drive_letter=drive_letter, # Maintain Windows drive letter formatting for client convenience
+                        drive_letter=drive_letter,
                         volume_name=f"Mounted Drive ({entry.name.upper()})",
                         drive_type="USB Drive" if entry.name.lower() != 'c' else "HDD",
                         size_gb=size_gb,
@@ -409,63 +329,6 @@ def _get_linux_usb_devices() -> List["USBDevice"]:
                         model=f"WSL/Docker Bind Mount ({entry.path})"
                     ))
     except Exception as e:
-        print(f"[USB] Docker fallback mount scan error: {e}")
+        print(f"[USB] Docker mount scan error: {e}")
 
     return devices
-
-
-# ---------------------------------------------------------------------------
-# Monitor
-# ---------------------------------------------------------------------------
-
-class USBDeviceMonitor:
-    """Monitor USB device connections periodically in a background thread."""
-
-    def __init__(self, interval: int = 2):
-        self.interval = interval
-        self.devices: List[USBDevice] = []
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._callbacks = []
-
-    def start(self):
-        """Start periodic USB device scanning."""
-        if not self._running:
-            self._running = True
-            self._thread = threading.Thread(target=self._scan_loop, daemon=True)
-            self._thread.start()
-
-    def stop(self):
-        """Stop periodic scanning."""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=3)
-
-    def _scan_loop(self):
-        """Background scanning loop."""
-        while self._running:
-            try:
-                self.devices = get_usb_devices()
-                for cb in self._callbacks:
-                    try:
-                        cb(self.devices)
-                    except Exception as e:
-                        print(f"[USB] Callback error: {e}")
-            except Exception as e:
-                print(f"[USB] Scan loop error: {e}")
-            time.sleep(self.interval)
-
-    def add_callback(self, callback):
-        self._callbacks.append(callback)
-
-    def get_devices(self) -> List[USBDevice]:
-        return self.devices
-
-    def scan_now(self) -> List[USBDevice]:
-        """Force an immediate scan and cache result."""
-        self.devices = get_usb_devices()
-        return self.devices
-
-
-# Global singleton
-usb_monitor = USBDeviceMonitor(interval=2)

@@ -241,6 +241,7 @@ export const evidenceAPI = {
    DEVICES
 ========================================================= */
 export const devicesAPI = {
+<<<<<<< HEAD
   getDevices: () =>
     api.get("/devices/"),
 
@@ -252,6 +253,23 @@ export const devicesAPI = {
 
   refreshDevices: () =>
     api.post("/devices/refresh/"),
+=======
+  getDevices: () => api.get('/devices/'),
+  startScanning: () => api.post('/devices/scan/'),
+  stopScanning: () => api.delete('/devices/scan/'),
+  refreshDevices: () => api.post('/devices/refresh/'),
+  runDiagnostics: (data) => api.post('/devices/diagnostics/', data),
+};
+
+/* =========================================================
+   📁 RECOVERY API
+========================================================= */
+export const recoveryAPI = {
+  startRecovery: (data) => api.post('/recovery/start/', data),
+  getPendingJobs: () => api.get('/recovery/jobs/pending/'),
+  getRecoveredFiles: (caseId) => api.get(`/recovery/files/?case_id=${caseId}`),
+  downloadFileUrl: (fileId) => `${API_BASE_URL}/recovery/files/${fileId}/download/`,
+>>>>>>> 9c4f963 (Implement AIDFIRS real forensic agent with USB acquisition and deleted file recovery)
 };
 
 /* =========================================================

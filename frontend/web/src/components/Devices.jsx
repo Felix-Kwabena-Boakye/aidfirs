@@ -236,7 +236,7 @@ export default function Devices() {
                 {/* Card metadata grid ... existing grid ... */}
 
                 {/* Card metadata grid */}
-                <div className="border-t border-gray-700/50 px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="border-t border-gray-700/50 px-4 py-3 grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div className="flex items-center gap-2">
                     <HardDrive className="w-4 h-4 text-gray-500 flex-shrink-0" />
                     <div>
@@ -269,6 +269,16 @@ export default function Devices() {
                       <p className="text-xs text-gray-500">Serial</p>
                       <p className="text-sm text-white font-mono truncate" title={device.serial_number}>
                         {device.serial_number ? device.serial_number.substring(0, 12) : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 col-span-2 sm:col-span-1">
+                    <Usb className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-gray-500">Source</p>
+                      <p className="text-sm text-blue-400 font-semibold truncate" title={device.source || 'AIDFIRS Agent'}>
+                        {device.source || 'AIDFIRS Agent'}
                       </p>
                     </div>
                   </div>

@@ -1,57 +1,110 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .usb_detector import usb_monitor
 from accounts.permissions import IsInvestigator
+from .models import Device
+from .serializers import DeviceSerializer
 
 
 class DeviceListView(APIView):
     """
     GET /api/devices/
-    Returns the current list of USB/removable devices.
+    Returns the current list of registered USB/removable devices from MongoDB.
     Accessible by any authenticated user.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        devices = usb_monitor.scan_now()
+        devices = Device.get_all()
         return Response({
             "devices": [d.to_dict() for d in devices],
             "count": len(devices),
-            "scanning": usb_monitor._running,
+            "scanning": True,  # Maintain backwards compatibility
         })
 
 
 class DeviceScanView(APIView):
     """
-    POST  /api/devices/scan/  — start background scanning
-    DELETE /api/devices/scan/ — stop background scanning
+    POST  /api/devices/scan/  — start scanning (mocked)
+    DELETE /api/devices/scan/ — stop scanning (mocked)
     Admin / Investigator only.
     """
     permission_classes = [IsInvestigator]
 
     def post(self, request):
-        usb_monitor.start()
         return Response({"status": "scanning started"})
 
     def delete(self, request):
-        usb_monitor.stop()
         return Response({"status": "scanning stopped"})
 
 
 class DeviceRefreshView(APIView):
     """
     POST /api/devices/refresh/
-    Force an immediate scan and return results.
+    Return the current saved devices from MongoDB.
     Admin / Investigator only.
     """
     permission_classes = [IsInvestigator]
 
     def post(self, request):
-        devices = usb_monitor.scan_now()
+        devices = Device.get_all()
         return Response({
             "devices": [d.to_dict() for d in devices],
             "count": len(devices),
+        })
+
+
+class DeviceRegisterView(APIView):
+    """
+    POST /api/devices/register/
+    Register a device connected to a local agent.
+    Requires authenticated user (agent).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from cases.coc_models import ChainOfCustody
+        from accounts.models import AuditLog
+
+        serializer = DeviceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        device = Device.create(
+            device_name=data["device_name"],
+            serial_number=data["serial_number"],
+            model=data["model"],
+            filesystem=data["filesystem"],
+            size_gb=data["size_gb"],
+            drive_letter=data["drive_letter"],
+            connected_at=data.get("connected_at"),
+            source=data.get("source", "AIDFIRS Agent")
+        )
+
+        # Log DEVICE_CONNECTED action
+        try:
+            AuditLog.log(
+                user_id=str(request.user._id),
+                username=request.user.username,
+                action="DEVICE_CONNECTED",
+                resource_type="device",
+                resource_id=str(device._id),
+                details=device.to_dict()
+            )
+            ChainOfCustody.create(
+                case_id="global",
+                evidence_id=str(device._id),
+                action="DEVICE_CONNECTED",
+                performed_by=request.user.username,
+                notes=f"Device {device.device_name} (Serial: {device.serial_number}) connected via AIDFIRS Forensic Agent."
+            )
+        except Exception as e:
+            print(f"[DeviceRegister] Logging failed: {e}")
+
+        return Response({
+            "success": True,
+            "message": "Device registered successfully",
+            "device": device.to_dict()
         })
 
 

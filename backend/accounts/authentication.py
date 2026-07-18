@@ -27,11 +27,12 @@ class MongoJWTAuthentication(BaseAuthentication):
 
     def authenticate(self, request):
         auth_header = request.headers.get('Authorization', '')
+        token = None
+        if auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+        else:
+            token = request.query_params.get('token')
 
-        if not auth_header.startswith('Bearer '):
-            return None  # No token — let DRF fall through to anonymous
-
-        token = auth_header.split(' ', 1)[1].strip()
         if not token:
             return None
 

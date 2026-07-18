@@ -101,6 +101,8 @@ recovered_files_collection = db["recovered_files"] if MONGO_AVAILABLE else None
 metadata_collection = db["metadata"] if MONGO_AVAILABLE else None
 ai_reports_collection = db["ai_reports"] if MONGO_AVAILABLE else None
 system_settings_collection = db["system_settings"] if MONGO_AVAILABLE else None
+devices_collection = db["devices"] if MONGO_AVAILABLE else None
+recovery_jobs_collection = db["recovery_jobs"] if MONGO_AVAILABLE else None
 
 
 # --------------------------------------------------
@@ -210,6 +212,20 @@ def get_system_settings_collection():
     Returns the system_settings collection.
     """
     return system_settings_collection
+
+
+def get_devices_collection():
+    """
+    Returns the devices collection.
+    """
+    return devices_collection
+
+
+def get_recovery_jobs_collection():
+    """
+    Returns the recovery_jobs collection.
+    """
+    return recovery_jobs_collection
 
 
 

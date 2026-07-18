@@ -24,6 +24,7 @@ const allMenuItems = [
   { name: 'File Monitor', icon: Eye, path: '/file-monitor', roles: ['admin', 'investigator'] },
   { name: 'Cases', icon: FolderOpen, path: '/cases', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Evidence', icon: FileText, path: '/evidence', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Recovered Files', icon: FolderOpen, path: '/recovered-files', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Analysis', icon: BarChart3, path: '/analysis', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Reports', icon: FileBarChart, path: '/reports', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Users', icon: Users, path: '/users', roles: ['admin'] },
