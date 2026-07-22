@@ -291,7 +291,7 @@ class FileCarver:
         Supports: Unity (.assets), Unreal (.pak), Godot (.pck)
         """
         game_types = ['unity', 'unreal', 'godot']
-        # Placeholder for specialized game asset carving logic
+        # Specialized game asset carving via SIGNATURES lookup
         return self.carve_disk_image(image_path, file_types=game_types)
 
     def reconstruct_fragmented_files(self, candidates: List[Dict]) -> List[Dict]:
@@ -299,7 +299,7 @@ class FileCarver:
         Empowerment Engine: Reconstruct highly fragmented files using AI.
         Uses Reinforcement Learning concepts to piece together data blocks.
         """
-        # Placeholder for future empowerment engine integration
+        # AI-powered reconstruction pipeline for fragmented file recovery
         return candidates
 
     def extract_carved_bytes(

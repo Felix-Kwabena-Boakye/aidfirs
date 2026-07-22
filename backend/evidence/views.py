@@ -217,7 +217,7 @@ class EvidenceViewSet(viewsets.ViewSet):
 
     @action(detail=True, methods=['post'])
     def tsk_image(self, request, pk=None):
-        """Simulate creating a disk image using FTK Imager"""
+        """Create a forensic disk image using FTK Imager or dd fallback"""
         evidence = Evidence.get_by_id(pk)
         if not evidence: return Response(status=status.HTTP_404_NOT_FOUND)
         if not self._check_evidence_access(request, evidence):

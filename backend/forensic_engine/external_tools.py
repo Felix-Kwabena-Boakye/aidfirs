@@ -12,7 +12,8 @@ Supported (optional) tools:
 This module is designed to be conservative:
 - Never writes outside the provided output directory.
 - Validates command arguments.
-- Falls back to "mock mode" when tools are missing.
+- Gracefully reports tool unavailability when tools are missing.
+- Returns structured errors instead of generated data, preserving forensic integrity.
 
 The goal is to produce structured JSON that can be displayed in the UI.
 """
@@ -225,4 +226,3 @@ def safe_make_output_dir(base_dir: str, evidence_id: str, subdir: str) -> str:
     out_dir = os.path.join(base_dir, str(evidence_id), subdir)
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
-
