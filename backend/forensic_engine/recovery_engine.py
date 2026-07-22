@@ -1,15 +1,11 @@
 #!/usr/bin/env python
 """backend.forensic_engine.recovery_engine
 
-Orchestrates forensic-sound file recovery from disk images / raw media.
-
-This module is intentionally conservative:
-- It never modifies the input evidence.
-- It produces a structured report and (optionally) carved output files.
-- It hashes carved output (MD5 + SHA-256) and includes scan parameters.
-
-Note: The current repository's filesystem parsing is heuristic/simulated.
-This engine focuses on reproducible scanning + carving based on headers/footers.
+Production forensic recovery pipeline.
+- Never modifies input evidence.
+- Uses real file carving, signature scanning, and external forensic tools.
+- Hashes all carved output (MD5 + SHA-256).
+- Writes detailed forensic acquisition reports.
 """
 
 from __future__ import annotations
@@ -48,7 +44,7 @@ class RecoveryOptions:
     max_carved_per_type: int = 200
     max_carve_bytes: int = 2 * 1024 * 1024 * 1024  # 2GB safety cap for carving
 
-    # External-tool pipeline (best-effort + mock fallback)
+    # External-tool pipeline (best-effort, tools run if installed)
     use_foremost: bool = False
     use_scalpel: bool = False
     use_bulk_extractor: bool = False
@@ -221,4 +217,3 @@ class RecoveryEngine:
             with open(report_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
         return report
-

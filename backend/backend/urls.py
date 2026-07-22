@@ -4,7 +4,11 @@ from django.http import JsonResponse
 from accounts.views import AgentRegisterView
 
 def api_root(request):
-    return JsonResponse({"message": "AI Digital Forensics API is running"})
+    return JsonResponse({
+        "message": "AIDFIRS — AI Digital Forensics API is running",
+        "version": "2.0",
+        "status": "operational"
+    })
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -16,4 +20,5 @@ urlpatterns = [
     path('api/analysis/', include('analysis.urls')),
     path('api/devices/', include('devices.urls')),
     path('api/recovery/', include('recovery.urls')),
+    path('api/reports/', include('reports.urls')),
 ]

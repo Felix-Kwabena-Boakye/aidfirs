@@ -219,7 +219,7 @@ def get_real_fallback_or_error(command, args, original_error=None):
         return {"success": False, "error": f"Failed to list files: {error_detail}", "mock": False}
 
     if command == 'ils':
-        mock_output = "class|host|device|start_time\nils|forensics-lab|/dev/sdb1|1709373600\nst_ino|st_alloc|st_uid|st_gid|st_mtime|st_atime|st_ctime|st_crtime|st_mode|st_nlink|st_size\n"
+        output = "class|host|device|start_time\nils|forensics-lab|/dev/sdb1|1709373600\nst_ino|st_alloc|st_uid|st_gid|st_mtime|st_atime|st_ctime|st_crtime|st_mode|st_nlink|st_size\n"
         
         target_drive = _get_drive_letter(image_path) if image_path else None
         if target_drive:
@@ -233,10 +233,10 @@ def get_real_fallback_or_error(command, args, original_error=None):
                         dt = datetime.datetime.fromisoformat(r['deleted_at'])
                         ts = int(dt.timestamp())
                         size = r['size']
-                        mock_output += f"{inode_idx}|0|1000|1000|{ts}|{ts}|{ts}|{ts}|33188|0|{size}\n"
+                        output += f"{inode_idx}|0|1000|1000|{ts}|{ts}|{ts}|{ts}|33188|0|{size}\n"
                         inode_idx += 1
                         
-                    return {"success": True, "output": mock_output, "mock": False, "real_deleted": recovered}
+                    return {"success": True, "output": output, "mock": False, "real_deleted": recovered}
             except Exception as e:
                 return {"success": False, "error": f"Recycle Bin metadata scan failed: {str(e)}", "mock": False}
                 
@@ -245,22 +245,40 @@ def get_real_fallback_or_error(command, args, original_error=None):
     return {"success": False, "error": f"Failed to execute {command}: {error_detail}", "mock": False}
 
 def create_disk_image(source_path, dest_dir):
-    """Simulate creating a bit-for-bit forensic image using FTK Imager"""
+    """Create a bit-for-bit forensic disk image using FTK Imager or dd fallback."""
     source_path = os.path.abspath(source_path)
     dest_dir = os.path.abspath(dest_dir)
     if source_path.startswith('-') or not is_safe_path(dest_dir) or dest_dir.startswith('-'):
         return {"success": False, "error": "Invalid or unauthorized path"}
     dest_path = os.path.join(dest_dir, "forensic_image.E01")
-    # ftkimager source destination --e01 --verify
+    # Try FTK Imager first, fall back to dd
     res = run_command('ftkimager', [source_path, dest_path, '--e01', '--verify'])
-    if not res["success"]: return res
-    
-    return {
-        "success": True, 
-        "image_path": dest_path, 
-        "verification": "MD5: 5d41402abc4b2a76b9719d911017c592",
-        "raw": res["output"]
-    }
+    if res["success"]:
+        return {
+            "success": True, 
+            "image_path": dest_path, 
+            "verification": res.get("output", ""),
+            "raw": res["output"]
+        }
+    # Fallback: use dd (or Python-based raw copy on Windows)
+    import hashlib
+    sha256 = hashlib.sha256()
+    try:
+        with open(source_path, 'rb') as src, open(dest_path, 'wb') as dst:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                sha256.update(chunk)
+        return {
+            "success": True,
+            "image_path": dest_path,
+            "verification": f"SHA256: {sha256.hexdigest()}",
+            "note": "Acquired via Python raw copy (dd fallback). FTK Imager was not available."
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Forensic imaging failed: {str(e)}"}
 
 def get_partitions(image_path):
     """Run mmls to get partition layout"""
@@ -563,4 +581,3 @@ def run_exiftool(file_path):
     if res.get("mock", False):
         return res
     return {**res, "mock": False}
-

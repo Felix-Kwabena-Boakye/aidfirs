@@ -29,7 +29,7 @@ const API_BASE_URL = getApiBaseUrl();
 ========================================================= */
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000,
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -119,9 +119,6 @@ export const authAPI = {
    USERS API
 ========================================================= */
 export const usersAPI = {
-  // =========================
-  // Users
-  // =========================
   getUsers: () =>
     api.get("/accounts/users/"),
 
@@ -134,25 +131,16 @@ export const usersAPI = {
   deleteUser: (id) =>
     api.delete(`/accounts/users/${id}/`),
 
-  // =========================
-  // Approve / Activate
-  // =========================
   activateUser: (id) =>
     api.post(`/accounts/users/${id}/activate/`, {
       action: "activate",
     }),
 
-  // =========================
-  // Deactivate
-  // =========================
   deactivateUser: (id) =>
     api.post(`/accounts/users/${id}/deactivate/`, {
       action: "deactivate",
     }),
 
-  // =========================
-  // Reset Password
-  // =========================
   resetPassword: (id, password) =>
     api.post(`/accounts/users/${id}/reset-password/`, {
       password,
@@ -241,7 +229,6 @@ export const evidenceAPI = {
    DEVICES
 ========================================================= */
 export const devicesAPI = {
-<<<<<<< HEAD
   getDevices: () =>
     api.get("/devices/"),
 
@@ -253,32 +240,109 @@ export const devicesAPI = {
 
   refreshDevices: () =>
     api.post("/devices/refresh/"),
-=======
-  getDevices: () => api.get('/devices/'),
-  startScanning: () => api.post('/devices/scan/'),
-  stopScanning: () => api.delete('/devices/scan/'),
-  refreshDevices: () => api.post('/devices/refresh/'),
-  runDiagnostics: (data) => api.post('/devices/diagnostics/', data),
+
+  runDiagnostics: (data) =>
+    api.post("/devices/diagnostics/", data),
+
+  deleteDevice: (id) =>
+    api.delete(`/devices/${id}/`),
 };
 
 /* =========================================================
    📁 RECOVERY API
-========================================================= */
+ ========================================================= */
 export const recoveryAPI = {
-  startRecovery: (data) => api.post('/recovery/start/', data),
-  getPendingJobs: () => api.get('/recovery/jobs/pending/'),
-  getRecoveredFiles: (caseId) => api.get(`/recovery/files/?case_id=${caseId}`),
-  downloadFileUrl: (fileId) => `${API_BASE_URL}/recovery/files/${fileId}/download/`,
->>>>>>> 9c4f963 (Implement AIDFIRS real forensic agent with USB acquisition and deleted file recovery)
+  // Start a new recovery job
+  startRecovery: (data) => api.post("/recovery/start/", data),
+
+  // Jobs
+  getJobs: (params) => api.get("/recovery/jobs/", { params }),
+  getJob: (id) => api.get(`/recovery/jobs/${id}/`),
+  getPendingJobs: () => api.get("/recovery/jobs/pending/"),
+  updateJob: (id, data) => api.patch(`/recovery/jobs/${id}/`, data),
+
+  // Recovered files
+  getRecoveredFiles: (caseId, params) =>
+    api.get(`/recovery/files/`, { params: { case_id: caseId, ...params } }),
+
+  getAllFiles: (params) => api.get("/recovery/files/", { params }),
+
+  searchFiles: (params) => api.get("/recovery/files/search/", { params }),
+
+  getFile: (id) => api.get(`/recovery/files/${id}/`),
+
+
+  // Hash verification - calls server to re-compute and compare
+  verifyFileHash: (id) => api.post(`/recovery/files/${id}/verify/`),
+
+  // Preview endpoint returns file content with appropriate MIME type
+  previewFileUrl: (id) =>
+    `${API_BASE_URL}/recovery/files/${id}/preview/`,
+
+  // Download URL (token appended by component)
+  downloadFileUrl: (id) =>
+    `${API_BASE_URL}/recovery/files/${id}/download/`,
+
+  // ZIP export of all files in a case
+  exportZip: (caseId) =>
+    api.get(`/recovery/export/?case_id=${caseId}`, { responseType: "blob" }),
+};
+
+/* =========================================================
+   📅 TIMELINE API
+========================================================= */
+export const timelineAPI = {
+  getTimeline: (caseId, params) =>
+    api.get(`/recovery/timeline/`, { params: { case_id: caseId, ...params } }),
+
+  addEvent: (data) =>
+    api.post("/recovery/timeline/", data),
+
+  exportTimeline: (caseId) =>
+    api.get(`/recovery/timeline/export/?case_id=${caseId}`, {
+      responseType: "blob",
+    }),
+};
+
+/* =========================================================
+   🔗 CHAIN OF CUSTODY API
+========================================================= */
+export const chainOfCustodyAPI = {
+  getChainOfCustody: (caseId) =>
+    api.get(`/cases/${caseId}/chain_of_custody/`),
+
+  exportCoC: (caseId) =>
+    api.get(`/recovery/coc/export/?case_id=${caseId}`, {
+      responseType: "blob",
+    }),
+};
+
+/* =========================================================
+   📊 REPORTS API
+========================================================= */
+export const reportsAPI = {
+  generateReport: (data) =>
+    api.post("/reports/generate/", data),
+
+  getReports: (caseId) =>
+    api.get(`/reports/?case_id=${caseId}`),
+
+  getReport: (id) =>
+    api.get(`/reports/${id}/`),
+
+  downloadReport: (id, format) =>
+    api.get(`/reports/${id}/download/?format=${format}`, {
+      responseType: "blob",
+    }),
+
+  deleteReport: (id) =>
+    api.delete(`/reports/${id}/`),
 };
 
 /* =========================================================
    ANALYSIS
 ========================================================= */
 export const analysisAPI = {
-  // =========================
-  // CRUD
-  // =========================
   getAnalyses: () =>
     api.get("/analysis/"),
 
@@ -297,9 +361,6 @@ export const analysisAPI = {
   completeAnalysis: (id) =>
     api.post(`/analysis/${id}/complete/`),
 
-  // =========================
-  // AI Assistant
-  // =========================
   chatWithAssistant: (
     case_context,
     forensic_data,
@@ -331,9 +392,6 @@ export const analysisAPI = {
       case_context,
     }),
 
-  // =========================
-  // AI Oracle
-  // =========================
   trainModel: () =>
     api.post("/analysis/train-model/"),
 
@@ -343,9 +401,6 @@ export const analysisAPI = {
   predictRecoverability: (data) =>
     api.post("/analysis/predict-recoverability/", data),
 
-  // =========================
-  // System Agent
-  // =========================
   systemExecute: (instruction) =>
     api.post("/analysis/system-execute/", {
       instruction,

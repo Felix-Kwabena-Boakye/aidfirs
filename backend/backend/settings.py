@@ -19,54 +19,11 @@ if not SECRET_KEY:
         "SECRET_KEY environment variable is not set."
     )
 
-<<<<<<< HEAD
-=======
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'rest_framework_simplejwt',
-    'corsheaders',
-    'accounts','cases','evidence','analysis','devices','recovery'
-]
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'accounts.middleware.AuditTrailMiddleware',
-]
-ROOT_URLCONF = 'backend.urls'
-TEMPLATES = [{
-    'BACKEND': 'django.template.backends.django.DjangoTemplates',
-    'DIRS': [],
-    'APP_DIRS': True,
-    'OPTIONS': {'context_processors': [
-        'django.template.context_processors.debug',
-        'django.template.context_processors.request',
-        'django.contrib.auth.context_processors.auth',
-        'django.contrib.messages.context_processors.messages',
-    ]},
-}]
-WSGI_APPLICATION = 'backend.wsgi.application'
->>>>>>> 9c4f963 (Implement AIDFIRS real forensic agent with USB acquisition and deleted file recovery)
-
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-
 
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS",
-    "aidfirs.onrender.com"
+    "localhost,127.0.0.1,0.0.0.0,aidfirs.onrender.com"
 ).split(",")
 
 
@@ -93,6 +50,8 @@ INSTALLED_APPS = [
     "evidence",
     "analysis",
     "devices",
+    "recovery.apps.RecoveryConfig",
+    "reports.apps.ReportsConfig",
 ]
 
 
@@ -249,7 +208,7 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 
     "CORS_ALLOWED_ORIGINS",
 
-    "https://aidfirs.netlify.app"
+    "https://aidfirs.netlify.app,http://localhost:5173,http://127.0.0.1:5173"
 
 ).split(",")
 
@@ -265,6 +224,10 @@ CSRF_TRUSTED_ORIGINS = [
     "https://aidfirs.netlify.app",
 
     "https://aidfirs.onrender.com",
+
+    "http://localhost:5173",
+
+    "http://127.0.0.1:5173",
 
 ]
 
@@ -382,6 +345,10 @@ CSP_CONNECT_SRC = (
     "'self'",
 
     "https://aidfirs.onrender.com",
+
+    "http://localhost:8000",
+
+    "http://127.0.0.1:8000",
 
 )
 
@@ -505,3 +472,20 @@ EMAIL_RESET_URL_BASE = os.getenv(
     "https://aidfirs.netlify.app/reset-password"
 
 )
+
+
+# =========================
+# FILE STORAGE SETTINGS
+# =========================
+
+# Maximum upload size: 2GB for forensic images
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024 * 1024
+
+# Storage paths
+RECOVERY_STORAGE_ROOT = os.path.join(BASE_DIR, 'storage', 'recoveries')
+REPORTS_STORAGE_ROOT = os.path.join(BASE_DIR, 'storage', 'reports')
+
+# Ensure storage directories exist
+os.makedirs(RECOVERY_STORAGE_ROOT, exist_ok=True)
+os.makedirs(REPORTS_STORAGE_ROOT, exist_ok=True)

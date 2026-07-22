@@ -18,6 +18,12 @@ import RoleGuard from "./components/RoleGuard";
 import FileMonitor from "./components/FileMonitor";
 import AuditLogs from "./components/AuditLogs";
 import PermissionsAudit from "./components/PermissionsAudit";
+import RecoveryJobs from "./components/RecoveryJobs";
+import Timeline from "./components/Timeline";
+import HashVerification from "./components/HashVerification";
+import ChainOfCustody from "./components/ChainOfCustody";
+import Downloads from "./components/Downloads";
+import EvidencePreview from "./components/EvidencePreview";
 
 export default function App() {
   return (
@@ -67,6 +73,54 @@ export default function App() {
           </RoleGuard>
         }>
           <Route index element={<RecoveredFiles />} />
+        </Route>
+
+        <Route path="/recovery-jobs" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<RecoveryJobs />} />
+        </Route>
+
+        <Route path="/timeline" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<Timeline />} />
+        </Route>
+
+        <Route path="/hash-verification" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<HashVerification />} />
+        </Route>
+
+        <Route path="/chain-of-custody" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<ChainOfCustody />} />
+        </Route>
+
+        <Route path="/downloads" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<Downloads />} />
+        </Route>
+
+        <Route path="/evidence-preview" element={
+          <RoleGuard allowedRoles={['analyst', 'investigator', 'admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<EvidencePreview />} />
         </Route>
 
         <Route path="/analysis" element={
@@ -125,6 +179,14 @@ export default function App() {
           </RoleGuard>
         }>
           <Route index element={<PermissionsAudit />} />
+        </Route>
+
+        <Route path="/audit-logs" element={
+          <RoleGuard allowedRoles={['admin']}>
+            <Layout />
+          </RoleGuard>
+        }>
+          <Route index element={<AuditLogs />} />
         </Route>
       </Routes>
     </>

@@ -14,7 +14,7 @@ class ChainOfCustody:
     MongoDB-based Chain of Custody record with file-based fallback.
     """
     def __init__(self, case_id, evidence_id, action, performed_by, timestamp=None,
-                 hash_before='', hash_after='', notes='', _id=None):
+                 hash_before='', hash_after='', notes='', ip_address=None, _id=None):
         self._id = _id
         self.case_id = str(case_id)
         self.evidence_id = str(evidence_id) if evidence_id else None
@@ -24,9 +24,11 @@ class ChainOfCustody:
         self.hash_before = hash_before or ''
         self.hash_after = hash_after or ''
         self.notes = notes or ''
+        self.ip_address = ip_address or ''
 
     @staticmethod
-    def create(case_id, evidence_id, action, performed_by, notes='', hash_before='', hash_after=''):
+    def create(case_id, evidence_id, action, performed_by, notes='', hash_before='', hash_after='',
+               ip_address=None):
         """
         Create a new Chain of Custody entry.
         """
@@ -38,7 +40,8 @@ class ChainOfCustody:
             "timestamp": datetime.now(timezone.utc),
             "hash_before": hash_before or '',
             "hash_after": hash_after or '',
-            "notes": notes or ''
+            "notes": notes or '',
+            "ip_address": ip_address or '',
         }
 
         collection = get_chain_of_custody_collection()
@@ -124,6 +127,7 @@ class ChainOfCustody:
             hash_before=data.get('hash_before'),
             hash_after=data.get('hash_after'),
             notes=data.get('notes'),
+            ip_address=data.get('ip_address'),
         )
 
     def to_dict(self):
@@ -137,7 +141,8 @@ class ChainOfCustody:
             "timestamp": self.timestamp.isoformat() if isinstance(self.timestamp, datetime) else self.timestamp,
             "hash_before": self.hash_before,
             "hash_after": self.hash_after,
-            "notes": self.notes
+            "notes": self.notes,
+            "ip_address": self.ip_address,
         }
 
 

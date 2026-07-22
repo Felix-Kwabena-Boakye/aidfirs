@@ -70,8 +70,13 @@ class Evidence:
     @staticmethod
     def compute_hashes(file_path):
         """
-        Compute MD5, SHA1, SHA256 hashes for a file.
+        Compute real MD5, SHA1, SHA256 cryptographic hashes for a file.
+        Returns hashes only for files that actually exist on disk.
+        Returns None for all three if the file cannot be read.
         """
+        if not file_path or not os.path.isfile(file_path):
+            return {'md5': None, 'sha1': None, 'sha256': None}
+
         md5_hash = hashlib.md5()
         sha1_hash = hashlib.sha1()
         sha256_hash = hashlib.sha256()
@@ -88,14 +93,8 @@ class Evidence:
                 'sha1': sha1_hash.hexdigest(),
                 'sha256': sha256_hash.hexdigest()
             }
-        except Exception as e:
-            # Generate unique placeholder hashes when file doesn't exist
-            unique_id = str(uuid.uuid4())
-            return {
-                'md5': f'placeholder_{unique_id}',
-                'sha1': f'placeholder_{unique_id}',
-                'sha256': f'placeholder_{unique_id}'
-            }
+        except Exception:
+            return {'md5': None, 'sha1': None, 'sha256': None}
     
     @staticmethod
     def create(case_id, evidence_type, file_name, file_path,
@@ -103,17 +102,8 @@ class Evidence:
         """
         Create new evidence in MongoDB.
         """
-        # Compute hashes or generate unique placeholders
-        if file_path:
-            hashes = Evidence.compute_hashes(file_path)
-        else:
-            # Generate unique placeholder hashes for manual entries without files
-            unique_id = str(uuid.uuid4())
-            hashes = {
-                'md5': f'manual_md5_{unique_id}',
-                'sha1': f'manual_sha1_{unique_id}',
-                'sha256': f'manual_sha256_{unique_id}'
-            }
+        # Compute real cryptographic hashes. If no file or file unreadable, store None.
+        hashes = Evidence.compute_hashes(file_path) if file_path else {'md5': None, 'sha1': None, 'sha256': None}
         
         evidence_doc = {
             "case_id": case_id,

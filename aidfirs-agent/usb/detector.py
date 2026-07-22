@@ -21,41 +21,65 @@ except ImportError:
 
 
 class USBDevice:
-    """Represents a detected USB/removable drive."""
+    """Represents a detected USB/removable drive or physical forensic target."""
 
     def __init__(self, drive_letter: str, volume_name: str = "",
                  drive_type: str = "USB Drive", size_gb: float = 0,
                  serial_number: str = "", interface: str = "USB",
                  is_external: bool = True, filesystem: str = "",
-                 model: str = ""):
+                 model: str = "", vendor: str = "", manufacturer: str = "",
+                 bus_type: str = "", device_path: str = ""):
         self.drive_letter = drive_letter
         self.volume_name = volume_name
         self.drive_type = drive_type
         self.size_gb = size_gb
-        self.serial_number = serial_number
+        self.serial_number = serial_number or "UNKNOWN"
         self.interface = interface
         self.is_external = is_external
         self.filesystem = filesystem
         self.model = model
+        self.vendor = vendor
+        self.manufacturer = manufacturer
+        self.bus_type = bus_type or interface
+        self.device_path = device_path or drive_letter
+        self.volume_label = volume_name or model or "USB Drive"
+        self.mount_point = drive_letter
+        self.capacity_bytes = int(size_gb * 1024 ** 3)
         self.connected_at = datetime.now(timezone.utc)
+
+        # Cryptographic fingerprints of serial number + model
+        fingerprint_src = f"{self.serial_number}:{self.model}".encode('utf-8')
+        import hashlib
+        self.hash_sha256 = hashlib.sha256(fingerprint_src).hexdigest()
+        self.hash_md5 = hashlib.md5(fingerprint_src).hexdigest()
 
     def to_dict(self) -> Dict:
         return {
-            "device_name": self.volume_name or self.model or "USB Drive",
+            "device_name": self.volume_label,
             "model": self.model or "Unknown Model",
-            "serial_number": self.serial_number or "UNKNOWN",
+            "serial_number": self.serial_number,
             "filesystem": self.filesystem or "Auto-Detect",
             "capacity": self.size_gb,
-            "mount_point": self.drive_letter,
+            "capacity_bytes": self.capacity_bytes,
+            "mount_point": self.mount_point,
             "drive_letter": self.drive_letter,
+            "device_path": self.device_path,
             "connected_time": self.connected_at.isoformat() if self.connected_at else None,
-            # Backward compatibility fields for Django views:
+            "vendor": self.vendor or "Unknown Vendor",
+            "manufacturer": self.manufacturer or "Unknown Manufacturer",
+            "bus_type": self.bus_type,
             "drive_type": self.drive_type,
             "size_gb": self.size_gb,
             "volume_name": self.volume_name or self.model or "USB Drive",
+            "volume_label": self.volume_label,
+            "interface": self.interface,
+            "is_external": self.is_external,
             "connected_at": self.connected_at.isoformat() if self.connected_at else None,
+            "hash_sha256": self.hash_sha256,
+            "hash_md5": self.hash_md5,
             "source": "AIDFIRS Agent"
         }
+
 
 
 def _get_drive_type_win32(drive_letter: str) -> int:
@@ -105,22 +129,40 @@ $results = @()
 try {
     $disks = Get-Disk -ErrorAction SilentlyContinue
     foreach ($disk in $disks) {
-        $busType = $disk.BusType
-        if ($true) {
-            $partitions = $disk | Get-Partition -ErrorAction SilentlyContinue
-            foreach ($part in $partitions) {
-                $letter = $part.DriveLetter
-                if (-not $letter -or $letter -eq '') { continue }
-                $vol = $part | Get-Volume -ErrorAction SilentlyContinue
-                $results += [PSCustomObject]@{
-                    Letter       = [string]$letter
-                    VolumeLabel  = if ($vol) { $vol.FileSystemLabel } else { '' }
-                    FileSystem   = if ($vol) { $vol.FileSystem } else { '' }
-                    SizeGB       = [math]::Round($disk.Size / 1GB, 2)
-                    Model        = $disk.FriendlyName
-                    SerialNumber = $disk.SerialNumber
-                    BusType      = [string]$disk.BusType
+        $partitions = $disk | Get-Partition -ErrorAction SilentlyContinue
+        foreach ($part in $partitions) {
+            $letter = $part.DriveLetter
+            if (-not $letter -or $letter -eq '') { continue }
+            $vol = $part | Get-Volume -ErrorAction SilentlyContinue
+            
+            $wmiDisk = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Index=$($disk.Number)" -ErrorAction SilentlyContinue
+            $manufacturer = if ($wmiDisk) { $wmiDisk.Manufacturer } else { '' }
+            
+            $driveType = "USB Drive"
+            $busLower = "$($disk.BusType)".ToLower()
+            if ($busLower -eq "sd" -or $busLower -eq "mmc" -or $disk.FriendlyName -match "SD Card" -or $disk.FriendlyName -match "Card Reader") {
+                $driveType = "Memory Card"
+            } elseif ($busLower -eq "sata" -or $busLower -eq "nvme" -or $busLower -eq "scsi") {
+                if ($wmiDisk.MediaType -match "External" -or $disk.OperationalStatus -match "Removable" -or $wmiDisk.Capabilities -contains 4) {
+                    $driveType = "External HDD"
+                } else {
+                    $driveType = "Internal HDD"
                 }
+            } elseif ($busLower -eq "usb") {
+                $driveType = "USB Drive"
+            }
+            
+            $results += [PSCustomObject]@{
+                Letter       = [string]$letter
+                VolumeLabel  = if ($vol) { $vol.FileSystemLabel } else { '' }
+                FileSystem   = if ($vol) { $vol.FileSystem } else { '' }
+                SizeGB       = [math]::Round($disk.Size / 1GB, 2)
+                Model        = $disk.FriendlyName
+                SerialNumber = $disk.SerialNumber
+                BusType      = [string]$disk.BusType
+                Manufacturer = $manufacturer
+                Vendor       = $manufacturer
+                DriveType    = $driveType
             }
         }
     }
@@ -133,7 +175,7 @@ $results | ConvertTo-Json -Depth 3
              "-ExecutionPolicy", "Bypass", "-Command", ps_script],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=5,
         )
         stdout = result.stdout.strip()
         if not stdout or stdout.lower() in ("null", ""):
@@ -185,11 +227,7 @@ def _get_windows_usb_devices() -> List[USBDevice]:
         fstype = item.get("FileSystem", "")
         model = item.get("Model", "")
         serial = str(item.get("SerialNumber") or "").strip()
-
-        drive_type = "HDD"
-        bus_lower = str(item.get("BusType", "")).lower()
-        if "usb" in bus_lower or bus_lower == "7":
-            drive_type = "USB Drive"
+        drive_type = item.get("DriveType", "USB Drive")
 
         devices.append(USBDevice(
             drive_letter=letter,
@@ -197,10 +235,14 @@ def _get_windows_usb_devices() -> List[USBDevice]:
             drive_type=drive_type,
             size_gb=size_gb or 0,
             serial_number=serial,
-            interface="USB",
+            interface=item.get("BusType") or "USB",
             is_external=True,
             filesystem=fstype,
             model=model,
+            vendor=item.get("Vendor", ""),
+            manufacturer=item.get("Manufacturer", ""),
+            bus_type=item.get("BusType", ""),
+            device_path=f"\\\\.\\{letter}:"
         ))
 
     all_drives = _get_removable_drives_psutil()
@@ -221,16 +263,21 @@ def _get_windows_usb_devices() -> List[USBDevice]:
         devices.append(USBDevice(
             drive_letter=letter,
             volume_name=label,
-            drive_type="HDD" if drive_type_code == 3 else "USB Drive",
+            drive_type="Internal HDD" if drive_type_code == 3 else "USB Drive",
             size_gb=size_gb,
             serial_number="",
             interface="USB",
             is_external=True,
             filesystem=fstype,
             model="",
+            vendor="",
+            manufacturer="",
+            bus_type="USB",
+            device_path=f"\\\\.\\{letter}:"
         ))
 
     return devices
+
 
 
 def _parse_size_to_gb(size_str: str) -> float:

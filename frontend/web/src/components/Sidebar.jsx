@@ -1,7 +1,11 @@
 import React from "react";
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FolderOpen, FileText, BarChart3, FileBarChart, Settings, Usb, Users, Shield, Bot, Menu, X, Zap, Cpu, Eye, Lock } from 'lucide-react'
+import {
+  LayoutDashboard, FolderOpen, FileText, BarChart3, FileBarChart,
+  Settings, Usb, Users, Shield, Bot, Menu, X, Zap, Cpu, Eye,
+  Lock, Clock, Hash, Download, PackageOpen, Link2
+} from 'lucide-react'
 
 // Get user role from localStorage
 const getUserRole = () => {
@@ -25,6 +29,12 @@ const allMenuItems = [
   { name: 'Cases', icon: FolderOpen, path: '/cases', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Evidence', icon: FileText, path: '/evidence', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Recovered Files', icon: FolderOpen, path: '/recovered-files', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Recovery Jobs', icon: Cpu, path: '/recovery-jobs', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Timeline', icon: Clock, path: '/timeline', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Hash Verification', icon: Hash, path: '/hash-verification', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Chain of Custody', icon: Link2, path: '/chain-of-custody', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Downloads', icon: Download, path: '/downloads', roles: ['admin', 'investigator', 'analyst'] },
+  { name: 'Evidence Preview', icon: Eye, path: '/evidence-preview', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Analysis', icon: BarChart3, path: '/analysis', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Reports', icon: FileBarChart, path: '/reports', roles: ['admin', 'investigator', 'analyst'] },
   { name: 'Users', icon: Users, path: '/users', roles: ['admin'] },

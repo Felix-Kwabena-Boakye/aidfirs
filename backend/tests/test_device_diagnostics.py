@@ -169,7 +169,7 @@ def test_diagnostics_endpoint_success():
         "recommended_action": ""
     }
     
-    with patch('devices.views.run_diagnostics', return_value=mock_report):
+    with patch('devices.diagnostics.run_diagnostics', return_value=mock_report):
         response = view(request)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["success"] is True
