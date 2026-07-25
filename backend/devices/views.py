@@ -64,24 +64,99 @@ class DeviceDetailView(APIView):
 
 class DeviceScanView(APIView):
     """
-    POST  /api/devices/scan/  — Returns status (actual scanning is performed by the local agent)
-    DELETE /api/devices/scan/ — Returns status
+    POST   /api/devices/scan/   — Trigger a device scan
+    DELETE /api/devices/scan/   — Stop active scanning (agent-driven)
+
+    This view coordinates with the local AIDFIRS Forensic Agent to
+    detect connected USB / external drives.  If the agent is reachable
+    the backend returns its live device list; otherwise it falls back
+    to previously registered devices from MongoDB.
+
     Admin / Investigator only.
     """
     permission_classes = [IsInvestigator]
 
+    AGENT_HEALTH_URL = "http://127.0.0.1:8765/health"
+    AGENT_SCAN_URL = "http://127.0.0.1:8765/devices"
+
+    def _probe_agent(self):
+        """Try to contact the local forensic agent.  Returns (ok, data)."""
+        import requests as req
+        try:
+            r = req.get(self.AGENT_HEALTH_URL, timeout=3)
+            if r.status_code == 200:
+                return True, r.json()
+        except (req.ConnectionError, req.Timeout):
+            pass
+        except Exception:
+            pass
+        return False, None
+
+    def _agent_scan(self):
+        """Ask the agent to return current device list."""
+        import requests as req
+        try:
+            r = req.get(self.AGENT_SCAN_URL, timeout=5)
+            if r.status_code == 200:
+                return r.json().get("devices", [])
+        except (req.ConnectionError, req.Timeout):
+            pass
+        except Exception:
+            pass
+        return None
+
     def post(self, request):
-        devices = Device.get_all()
+        agent_ok, agent_health = self._probe_agent()
+        agent_devices_raw = self._agent_scan()
+
+        # Always fall back to the MongoDB / JSON device store
+        db_devices = Device.get_all()
+
+        # Merge agent devices into DB if available
+        merged = []
+        seen_serials = set()
+
+        if agent_devices_raw:
+            for raw in agent_devices_raw:
+                serial = raw.get("serial_number", "")
+                if serial and serial not in seen_serials:
+                    seen_serials.add(serial)
+                merged.append(raw)
+
+        for d in db_devices:
+            serial = d.serial_number
+            if serial and serial not in seen_serials:
+                seen_serials.add(serial)
+                merged.append(d.to_dict())
+            elif not serial:
+                merged.append(d.to_dict())
+
+        # Update scanning flag
+        from django.conf import settings
+        settings.DEVICE_SCANNING_ACTIVE = True
+
         return Response({
-            "status": "agent_driven",
-            "message": "Device scanning is performed by the AIDFIRS Local Forensic Agent. Connect the agent to this backend to register devices.",
-            "registered_devices": len(devices),
+            "status": "scanning_started" if agent_ok else "db_fallback",
+            "agent_reachable": agent_ok,
+            "agent_info": agent_health,
+            "devices": merged,
+            "count": len(merged),
+            "scanning": True,
+            "message": (
+                "Live device scan completed via local forensic agent."
+                if agent_ok else
+                "Forensic agent not reachable – showing previously registered devices. "
+                "Ensure the AIDFIRS Agent is running on this machine."
+            ),
         })
 
     def delete(self, request):
+        from django.conf import settings
+        settings.DEVICE_SCANNING_ACTIVE = False
         return Response({
-            "status": "agent_driven",
-            "message": "Device monitoring is controlled by the AIDFIRS Local Forensic Agent."
+            "status": "scanning_stopped",
+            "scanning": False,
+            "message": "Auto-scan deactivated.  The local forensic agent controls monitoring."
         })
 
 

@@ -29,20 +29,33 @@ export default function Devices() {
 
   const startScanning = async () => {
     try {
-      await api.post('/devices/scan/')
+      const res = await api.post('/devices/scan/')
       setScanning(true)
+      const msg = res.data?.message
+      if (msg) toast.success(msg)
     } catch (err) {
-      toast.error('Failed to start scanning')
+      const status = err.response?.status
+      const detail = err.response?.data?.detail || err.response?.data?.message || err.message
+      if (status === 405) {
+        toast.error('Scan endpoint misconfigured (405). Please contact your administrator.')
+      } else if (status === 404) {
+        toast.error('Scan endpoint not found (404). The API route may be missing.')
+      } else if (status === 403) {
+        toast.error('Access denied. You do not have permission to start a scan.')
+      } else {
+        toast.error('Failed to start scanning: ' + detail)
+      }
     }
   }
 
   const stopScanning = async () => {
-
     try {
       await api.delete('/devices/scan/')
       setScanning(false)
+      toast.success('Auto-scan stopped')
     } catch (err) {
-      toast.error('Failed to stop scanning')
+      const detail = err.response?.data?.message || err.message
+      toast.error('Failed to stop scanning: ' + detail)
     }
   }
 
