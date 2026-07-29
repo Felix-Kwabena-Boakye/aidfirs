@@ -215,64 +215,124 @@ def _get_windows_usb_devices() -> List[USBDevice]:
     devices: List[USBDevice] = []
     seen_letters: set = set()
 
-    ps_devices = _get_usb_metadata_powershell()
-    for item in ps_devices:
-        letter = str(item.get("Letter", "")).strip().upper()
+    # 1. Instant native Win32 drive enumeration (A..Z)
+    logical_letters = []
+    if CTYPES_AVAILABLE:
+        try:
+            mask = ctypes.windll.kernel32.GetLogicalDrives()
+            logical_letters = [chr(65 + i) for i in range(26) if mask & (1 << i)]
+        except Exception:
+            pass
+
+    if not logical_letters and PSUTIL_AVAILABLE:
+        try:
+            logical_letters = [p.mountpoint.rstrip(":\\") for p in psutil.disk_partitions(all=True)]
+        except Exception:
+            pass
+
+    # 2. Try fast PowerShell query for hardware models/serials (1 sec timeout)
+    ps_metadata = {}
+    try:
+        ps_script = r"Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object Model, SerialNumber, InterfaceType, MediaType, Size, DeviceID | ConvertTo-Json"
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            capture_output=True, text=True, timeout=1.5
+        )
+        if res.stdout and res.stdout.strip():
+            raw_data = json.loads(res.stdout)
+            if isinstance(raw_data, dict):
+                raw_data = [raw_data]
+            for disk_item in raw_data:
+                dev_id = str(disk_item.get("DeviceID", "")).strip()
+                if dev_id:
+                    ps_metadata[dev_id] = disk_item
+    except Exception:
+        pass
+
+    for letter in logical_letters:
+        letter = letter.upper().rstrip(":")
         if not letter or letter in seen_letters:
-            continue
-        seen_letters.add(letter)
-
-        size_gb = item.get("SizeGB") or _get_disk_usage_gb(letter)
-        label = item.get("VolumeLabel") or _get_volume_label_win32(letter)
-        fstype = item.get("FileSystem", "")
-        model = item.get("Model", "")
-        serial = str(item.get("SerialNumber") or "").strip()
-        drive_type = item.get("DriveType", "USB Drive")
-
-        devices.append(USBDevice(
-            drive_letter=letter,
-            volume_name=label,
-            drive_type=drive_type,
-            size_gb=size_gb or 0,
-            serial_number=serial,
-            interface=item.get("BusType") or "USB",
-            is_external=True,
-            filesystem=fstype,
-            model=model,
-            vendor=item.get("Vendor", ""),
-            manufacturer=item.get("Manufacturer", ""),
-            bus_type=item.get("BusType", ""),
-            device_path=f"\\\\.\\{letter}:"
-        ))
-
-    all_drives = _get_removable_drives_psutil()
-    for drv in all_drives:
-        letter = drv["letter"].upper().rstrip(":")
-        if letter in seen_letters:
             continue
 
         drive_type_code = _get_drive_type_win32(letter)
+        # Type 2 = DRIVE_REMOVABLE (USB Flash / SD Card), Type 3 = DRIVE_FIXED (HDD/SSD/Mounted Image)
         if drive_type_code not in (2, 3):
             continue
 
         seen_letters.add(letter)
-        size_gb = _get_disk_usage_gb(letter)
-        label = _get_volume_label_win32(letter)
-        fstype = drv.get("fstype", "")
+        drive_path = f"{letter}:\\"
+
+        label = ""
+        fstype = ""
+        vol_serial_hex = ""
+        size_gb = 0.0
+        capacity_bytes = 0
+
+        if CTYPES_AVAILABLE:
+            try:
+                vol_buf = ctypes.create_unicode_buffer(1024)
+                fs_buf = ctypes.create_unicode_buffer(1024)
+                serial_num = ctypes.c_ulong()
+                max_len = ctypes.c_ulong()
+                flags = ctypes.c_ulong()
+
+                res = ctypes.windll.kernel32.GetVolumeInformationW(
+                    drive_path, vol_buf, 1024,
+                    ctypes.byref(serial_num),
+                    ctypes.byref(max_len),
+                    ctypes.byref(flags),
+                    fs_buf, 1024
+                )
+                if res:
+                    label = vol_buf.value
+                    fstype = fs_buf.value
+                    if serial_num.value:
+                        vol_serial_hex = f"{serial_num.value:08X}"
+
+                total_bytes = ctypes.c_ulonglong()
+                free_bytes = ctypes.c_ulonglong()
+                ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                    drive_path, None,
+                    ctypes.byref(total_bytes),
+                    ctypes.byref(free_bytes)
+                )
+                capacity_bytes = total_bytes.value
+                size_gb = round(capacity_bytes / (1024 ** 3), 2)
+            except Exception:
+                pass
+
+        if size_gb == 0 and PSUTIL_AVAILABLE:
+            size_gb = _get_disk_usage_gb(letter)
+
+        # Categorize drive type
+        if drive_type_code == 2:
+            drive_type = "USB Drive"
+            is_external = True
+        else:
+            if letter == 'C':
+                drive_type = "Internal HDD"
+                is_external = False
+            else:
+                drive_type = "External HDD"
+                is_external = True
+
+        # Assign unique per-drive serial number to prevent DB collisions
+        serial_str = vol_serial_hex if vol_serial_hex else f"DRIVE-{letter}-{capacity_bytes}"
+        volume_name = label if label else f"{drive_type} ({letter}:)"
 
         devices.append(USBDevice(
             drive_letter=letter,
-            volume_name=label,
-            drive_type="Internal HDD" if drive_type_code == 3 else "USB Drive",
+            volume_name=volume_name,
+            drive_type=drive_type,
             size_gb=size_gb,
-            serial_number="",
-            interface="USB",
-            is_external=True,
-            filesystem=fstype,
-            model="",
-            vendor="",
-            manufacturer="",
-            bus_type="USB",
+            serial_number=serial_str,
+            interface="USB" if is_external else "SATA",
+            is_external=is_external,
+            filesystem=fstype or "FAT32" if drive_type_code == 2 else "NTFS",
+            model=f"{drive_type} ({letter}:)",
+            vendor="Removable Media" if drive_type_code == 2 else "Storage",
+            manufacturer="Standard Storage",
+            bus_type="USB" if is_external else "SATA",
             device_path=f"\\\\.\\{letter}:"
         ))
 

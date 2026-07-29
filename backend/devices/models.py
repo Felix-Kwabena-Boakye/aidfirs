@@ -96,13 +96,18 @@ class Device:
         }
 
         if col is not None:
-            if serial_number:
-                # Upsert by serial number to avoid duplicates
-                res = col.update_one({"serial_number": serial_number}, {"$set": doc}, upsert=True)
+            query = {}
+            if drive_letter:
+                query["drive_letter"] = drive_letter
+            elif serial_number and serial_number != "UNKNOWN":
+                query["serial_number"] = serial_number
+
+            if query:
+                res = col.update_one(query, {"$set": doc}, upsert=True)
                 if res.upserted_id:
                     doc["_id"] = res.upserted_id
                 else:
-                    existing = col.find_one({"serial_number": serial_number})
+                    existing = col.find_one(query)
                     doc["_id"] = existing["_id"] if existing else None
             else:
                 res = col.insert_one(doc)
@@ -118,13 +123,13 @@ class Device:
                 except:
                     pass
             updated = False
-            if serial_number:
-                for i, d in enumerate(devices):
-                    if d.get("serial_number") == serial_number:
-                        doc["_id"] = d.get("_id")
-                        devices[i] = doc
-                        updated = True
-                        break
+            for i, d in enumerate(devices):
+                if (drive_letter and d.get("drive_letter") == drive_letter) or \
+                   (serial_number and serial_number != "UNKNOWN" and d.get("serial_number") == serial_number):
+                    doc["_id"] = d.get("_id")
+                    devices[i] = doc
+                    updated = True
+                    break
             if not updated:
                 devices.append(doc)
             with open(DEVICES_FILE, 'w') as f:
