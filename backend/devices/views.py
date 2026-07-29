@@ -105,14 +105,67 @@ class DeviceScanView(APIView):
             pass
         return None
 
+    def _direct_scan(self):
+        """Perform direct USB detection on host if agent HTTP is offline."""
+        try:
+            import sys
+            import os
+            agent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'aidfirs-agent'))
+            if agent_dir not in sys.path:
+                sys.path.insert(0, agent_dir)
+            from usb.detector import get_usb_devices
+            devs = get_usb_devices()
+            return [d.to_dict() for d in devs]
+        except Exception as e:
+            print(f"[DeviceScanView] Direct local USB scan note: {e}")
+            return []
+
     def post(self, request):
         agent_ok, agent_health = self._probe_agent()
         agent_devices_raw = self._agent_scan()
 
-        # Always fall back to the MongoDB / JSON device store
+        if not agent_devices_raw:
+            agent_devices_raw = self._direct_scan()
+
+        # Save/update detected devices into MongoDB
+        if agent_devices_raw:
+            for raw in agent_devices_raw:
+                try:
+                    serial = raw.get("serial_number", "")
+                    drive_letter = raw.get("drive_letter", "")
+                    existing = Device.get_all()
+                    already_exists = any(
+                        (serial and d.serial_number == serial) or
+                        (drive_letter and d.drive_letter == drive_letter)
+                        for d in existing
+                    )
+                    if not already_exists:
+                        Device.create(
+                            device_name=raw.get("volume_name") or raw.get("model") or "USB Drive",
+                            serial_number=serial,
+                            model=raw.get("model", ""),
+                            filesystem=raw.get("filesystem", ""),
+                            size_gb=float(raw.get("size_gb") or raw.get("capacity") or 0.0),
+                            drive_letter=drive_letter,
+                            source=raw.get("source", "AIDFIRS Agent"),
+                            vendor=raw.get("vendor", ""),
+                            manufacturer=raw.get("manufacturer", ""),
+                            bus_type=raw.get("bus_type", "USB"),
+                            device_path=raw.get("device_path", ""),
+                            volume_label=raw.get("volume_label", ""),
+                            mount_point=raw.get("mount_point", ""),
+                            capacity_bytes=int(raw.get("capacity_bytes") or 0),
+                            drive_type=raw.get("drive_type", "USB Drive"),
+                            hash_sha256=raw.get("hash_sha256", ""),
+                            hash_md5=raw.get("hash_md5", ""),
+                        )
+                except Exception as ex:
+                    print(f"[DeviceScanView] Device save notice: {ex}")
+
+        # Fetch current MongoDB stored devices
         db_devices = Device.get_all()
 
-        # Merge agent devices into DB if available
+        # Merge live agent results with DB
         merged = []
         seen_serials = set()
 
@@ -128,7 +181,7 @@ class DeviceScanView(APIView):
             if serial and serial not in seen_serials:
                 seen_serials.add(serial)
                 merged.append(d.to_dict())
-            elif not serial:
+            elif not serial and d.to_dict() not in merged:
                 merged.append(d.to_dict())
 
         # Update scanning flag
@@ -136,17 +189,14 @@ class DeviceScanView(APIView):
         settings.DEVICE_SCANNING_ACTIVE = True
 
         return Response({
-            "status": "scanning_started" if agent_ok else "db_fallback",
-            "agent_reachable": agent_ok,
+            "status": "scanning_started",
+            "agent_reachable": agent_ok or len(agent_devices_raw) > 0,
             "agent_info": agent_health,
             "devices": merged,
             "count": len(merged),
             "scanning": True,
             "message": (
-                "Live device scan completed via local forensic agent."
-                if agent_ok else
-                "Forensic agent not reachable – showing previously registered devices. "
-                "Ensure the AIDFIRS Agent is running on this machine."
+                f"Auto-Scan active. Detected {len(merged)} USB / storage device(s)."
             ),
         })
 

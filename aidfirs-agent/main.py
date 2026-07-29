@@ -10,6 +10,7 @@ from config import (
 )
 from api.auth import AgentAuth
 from api.client import AgentAPIClient
+from api.server import start_agent_server
 from usb.monitor import USBDeviceMonitor
 from forensic.recovery import LocalRecoveryEngine
 from forensic.imaging import acquire_disk_image
@@ -37,9 +38,16 @@ class ForensicAgent:
         self.client = AgentAPIClient(self.auth)
         self.monitor = USBDeviceMonitor(interval=USB_SCAN_INTERVAL)
         self.running_jobs = set()
+        self.server = None
 
     def start(self):
         print_header()
+
+        # Start background HTTP server on port 8765 for Django queries
+        try:
+            self.server = start_agent_server(host="127.0.0.1", port=8765)
+        except Exception as err:
+            print(f"[Agent Server] Warning: Could not start agent HTTP server: {err}")
         
         # Initial authentication
         if not self.auth.authenticate():

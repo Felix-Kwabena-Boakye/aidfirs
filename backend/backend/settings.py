@@ -205,30 +205,22 @@ REST_FRAMEWORK = {
 # =========================
 
 CORS_ALLOWED_ORIGINS = os.getenv(
-
     "CORS_ALLOWED_ORIGINS",
-
-    "https://aidfirs.netlify.app,http://localhost:5173,http://127.0.0.1:5173"
-
+    "https://aidfirs.netlify.app,https://aidfirs.vercel.app,http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,https://aidfirs.onrender.com"
 ).split(",")
-
 
 CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOW_CREDENTIALS = True
 
-
-
 CSRF_TRUSTED_ORIGINS = [
-
     "https://aidfirs.netlify.app",
-
+    "https://aidfirs.vercel.app",
     "https://aidfirs.onrender.com",
-
     "http://localhost:5173",
-
     "http://127.0.0.1:5173",
-
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 

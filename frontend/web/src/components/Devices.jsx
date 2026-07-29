@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import api, { evidenceAPI, casesAPI } from '../api'
+import api, { devicesAPI, evidenceAPI, casesAPI } from '../api'
 import { Usb, RefreshCw, Wifi, WifiOff, HardDrive, Database, Hash, Cpu, Play } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -16,7 +16,7 @@ export default function Devices() {
     try {
       setLoading(true)
       setError(null)
-      const response = await api.get('/devices/')
+      const response = await devicesAPI.getDevices()
       setDevices(response.data.devices || [])
       setScanning(response.data.scanning || false)
       setLastRefresh(new Date())
@@ -29,8 +29,12 @@ export default function Devices() {
 
   const startScanning = async () => {
     try {
-      const res = await api.post('/devices/scan/')
+      const res = await devicesAPI.startScanning()
       setScanning(true)
+      if (res.data?.devices) {
+        setDevices(res.data.devices)
+      }
+      setLastRefresh(new Date())
       const msg = res.data?.message
       if (msg) toast.success(msg)
     } catch (err) {
@@ -50,7 +54,7 @@ export default function Devices() {
 
   const stopScanning = async () => {
     try {
-      await api.delete('/devices/scan/')
+      await devicesAPI.stopScanning()
       setScanning(false)
       toast.success('Auto-scan stopped')
     } catch (err) {
