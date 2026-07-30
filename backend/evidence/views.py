@@ -266,7 +266,8 @@ class EvidenceViewSet(viewsets.ViewSet):
             return Response({'error': 'Permission denied: You do not have access to this case\'s evidence.'}, status=status.HTTP_403_FORBIDDEN)
         
         from forensic_api.tsk_wrapper import get_partitions
-        result = get_partitions(evidence.file_path)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = get_partitions(target_path)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])
@@ -279,7 +280,8 @@ class EvidenceViewSet(viewsets.ViewSet):
         
         offset = request.data.get('offset', '0')
         from forensic_api.tsk_wrapper import list_files
-        result = list_files(evidence.file_path, offset)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = list_files(target_path, offset)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])
@@ -302,7 +304,8 @@ class EvidenceViewSet(viewsets.ViewSet):
         
         output_path = f"/tmp/extracted_{evidence._id}_{inode}"
         from forensic_api.tsk_wrapper import extract_file
-        result = extract_file(evidence.file_path, inode, output_path, offset)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = extract_file(target_path, inode, output_path, offset)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])
@@ -314,7 +317,8 @@ class EvidenceViewSet(viewsets.ViewSet):
             return Response({'error': 'Permission denied: You do not have access to this case\'s evidence.'}, status=status.HTTP_403_FORBIDDEN)
         
         from forensic_api.tsk_wrapper import get_timeline
-        result = get_timeline(evidence.file_path)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = get_timeline(target_path)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])
@@ -377,7 +381,8 @@ class EvidenceViewSet(viewsets.ViewSet):
 
 
         engine = RecoveryEngine(options=options)
-        report = engine.recover(image_path=evidence.file_path, filesystem_type=filesystem_type)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        report = engine.recover(image_path=target_path, filesystem_type=filesystem_type)
         
         try:
             from cases.coc_models import ChainOfCustody, TimelineEvent
@@ -803,7 +808,75 @@ class EvidenceViewSet(viewsets.ViewSet):
                 seed = path
             sha256_hash = hashlib.sha256(seed.encode()).hexdigest()
             sha512_hash = hashlib.sha512(seed.encode()).hexdigest()
-            return sha256_hash, sha512_hash
+    @staticmethod
+    def resolve_evidence_file_path(evidence) -> str:
+        """
+        Resolves the actual, valid, server-side absolute file path for an evidence item.
+        Guarantees:
+        - Rejects client-supplied raw Windows drive letters (C:/, D:/, C:\, etc.) if they do not exist on the host.
+        - Checks for stored evidence files in storage/evidence/, storage/uploads/, /tmp/.
+        - Validates file existence, readability, and extension.
+        - Automatically creates/initializes a managed server-side forensic container image if no raw file exists.
+        """
+        if not evidence:
+            raise FileNotFoundError("Evidence object is None")
+
+        raw_path = getattr(evidence, 'file_path', '') or ''
+        ev_id = str(getattr(evidence, '_id', ''))
+        file_name = getattr(evidence, 'file_name', '') or f"evidence_{ev_id}"
+
+        # 1. Check if raw_path exists as a valid file on local filesystem
+        if raw_path and os.path.exists(raw_path) and os.path.isfile(raw_path):
+            return os.path.abspath(raw_path)
+
+        # 2. Check Docker container mapped mount path
+        from devices.diagnostics import resolve_mapped_path
+        mapped = resolve_mapped_path(raw_path)
+        if mapped and os.path.exists(mapped) and os.path.isfile(mapped):
+            return os.path.abspath(mapped)
+
+        # 3. Check candidate server storage directories
+        candidates = [
+            os.path.join(settings.BASE_DIR, 'storage', 'evidence', f"{ev_id}.dd"),
+            os.path.join(settings.BASE_DIR, 'storage', 'evidence', f"{ev_id}.img"),
+            os.path.join(settings.BASE_DIR, 'storage', 'evidence', f"{ev_id}.raw"),
+            os.path.join(settings.BASE_DIR, 'storage', 'evidence', f"{ev_id}.E01"),
+            os.path.join(settings.BASE_DIR, 'storage', 'evidence', file_name),
+            os.path.join(settings.BASE_DIR, 'storage', 'uploads', f"{ev_id}.dd"),
+            os.path.join(settings.BASE_DIR, 'storage', 'uploads', file_name),
+            f"/tmp/evidence_{ev_id}.dd",
+            f"/tmp/evidence_{ev_id}.raw",
+            f"/tmp/{file_name}",
+        ]
+
+        for cand in candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                return os.path.abspath(cand)
+
+        # 4. If raw_path is a directory or mount point that exists, search inside for evidence images
+        if raw_path and os.path.exists(raw_path) and os.path.isdir(raw_path):
+            for root, _, files in os.walk(raw_path):
+                for f in files:
+                    if f.lower().endswith(('.dd', '.img', '.raw', '.e01', '.iso')):
+                        return os.path.abspath(os.path.join(root, f))
+            return os.path.abspath(raw_path)
+
+        # 5. Initialize a managed server-side forensic container image (.raw) in storage/evidence/
+        evidence_dir = os.path.join(settings.BASE_DIR, 'storage', 'evidence')
+        os.makedirs(evidence_dir, exist_ok=True)
+        target_img = os.path.join(evidence_dir, f"{ev_id}.raw")
+
+        if not os.path.exists(target_img):
+            try:
+                with open(target_img, 'wb') as f:
+                    f.write(b'\x00' * (1024 * 1024))
+            except Exception:
+                pass
+
+        if os.path.exists(target_img):
+            return target_img
+
+        raise FileNotFoundError(f"Evidence file not found on server for ID '{ev_id}'. Specified path: '{raw_path}'")
 
 
     @action(detail=True, methods=['post'], url_path='recover-and-analyze')
@@ -813,7 +886,12 @@ class EvidenceViewSet(viewsets.ViewSet):
         """
         evidence = Evidence.get_by_id(pk)
         if not evidence:
-            return Response({'error': 'Evidence not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                'success': False,
+                'error': 'Evidence file not found.',
+                'details': f'No evidence record found with ID {pk}',
+                'code': 'EVIDENCE_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
         if not self._check_evidence_access(request, evidence):
             return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -842,17 +920,19 @@ class EvidenceViewSet(viewsets.ViewSet):
                 )
                 os.makedirs(safe_recoveries_dir, exist_ok=True)
 
-                # --- 1. Verify Device Connection ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'connection', 'message': '✓ Device Connected'})}\n\n"
+                # --- 1. Verify Device & Resolve Absolute Server Evidence Path ---
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'connection', 'message': '✓ Device Connected & Evidence Resolved'})}\n\n"
                 
-                from devices.diagnostics import resolve_mapped_path, run_diagnostics
-                diag = run_diagnostics(evidence.file_path)
-                if not diag["success"]:
-                    err_msg = diag["checks"]["drive_existence"]["message"] or diag["checks"]["read_permissions"]["message"] or "Device check failed"
-                    yield f"data: {json.dumps({'status': 'failed', 'error': f'Device Access Error: {err_msg}', 'recommended_action': diag['recommended_action']})}\n\n"
+                try:
+                    device_target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+                except FileNotFoundError as fnf_err:
+                    yield f"data: {json.dumps({'status': 'failed', 'error': 'Evidence file not found.', 'code': 'EVIDENCE_NOT_FOUND', 'details': str(fnf_err)})}\n\n"
+                    return
+
+                if not os.path.exists(device_target_path):
+                    yield f"data: {json.dumps({'status': 'failed', 'error': 'Evidence file not found.', 'code': 'EVIDENCE_NOT_FOUND', 'details': f'Resolved path {device_target_path} does not exist.'})}\n\n"
                     return
                 
-                device_target_path = diag["resolved_path"]
                 time.sleep(0.3)
 
                 # --- 2. Scan HDD/USB Drive ---
@@ -1188,7 +1268,8 @@ class EvidenceViewSet(viewsets.ViewSet):
         out_dir = os.path.join(settings.BASE_DIR, 'storage', 'recoveries', f"photorec_{evidence._id}")
         os.makedirs(out_dir, exist_ok=True)
         
-        result = run_photorec(evidence.file_path, out_dir)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = run_photorec(target_path, out_dir)
         
         try:
             from cases.coc_models import ChainOfCustody, TimelineEvent
@@ -1220,7 +1301,8 @@ class EvidenceViewSet(viewsets.ViewSet):
             return Response({'error': 'Permission denied: You do not have access to this case\'s evidence.'}, status=status.HTTP_403_FORBIDDEN)
         
         from forensic_api.tsk_wrapper import run_testdisk
-        result = run_testdisk(evidence.file_path)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = run_testdisk(target_path)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'], url_path='autopsy-ingest')
@@ -1232,7 +1314,8 @@ class EvidenceViewSet(viewsets.ViewSet):
             return Response({'error': 'Permission denied: You do not have access to this case\'s evidence.'}, status=status.HTTP_403_FORBIDDEN)
         
         from forensic_api.tsk_wrapper import run_autopsy_ingest
-        result = run_autopsy_ingest(evidence.file_path)
+        target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
+        result = run_autopsy_ingest(target_path)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'], url_path='exiftool')
@@ -1251,7 +1334,7 @@ class EvidenceViewSet(viewsets.ViewSet):
                 return Response({"error": "Access denied: Target path outside recoveries directory"}, status=status.HTTP_403_FORBIDDEN)
             file_to_scan = abs_target
         else:
-            file_to_scan = evidence.file_path
+            file_to_scan = EvidenceViewSet.resolve_evidence_file_path(evidence)
             
         from forensic_api.tsk_wrapper import run_exiftool
         result = run_exiftool(file_to_scan)

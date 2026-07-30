@@ -88,9 +88,9 @@ export default function Devices() {
         case_id: newCaseId,
         evidence_type: 'disk_image',
         file_name: `${deviceLabel}_Forensic_Image`,
-        file_path: `${device.drive_letter}:\\`,
+        file_path: `storage/evidence/device_${device.drive_letter || 'drive'}_${device.serial_number || 'raw'}.raw`,
         file_size: Math.round(device.size_gb * 1024 * 1024 * 1024),
-        description: `Source Device: ${device.model}\nSerial: ${device.serial_number}\nInterface: USB / ${device.drive_letter}:`,
+        description: `Source Device: ${device.model || deviceLabel}\nSerial: ${device.serial_number || 'Unknown'}\nDrive Letter: ${device.drive_letter || 'N/A'}`,
         status: 'collected'
       }
 

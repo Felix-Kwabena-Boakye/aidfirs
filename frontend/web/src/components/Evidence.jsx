@@ -192,7 +192,8 @@ export default function Evidence() {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        }
+        },
+        body: JSON.stringify({ evidence_id: id })
       });
 
       if (!response.ok) {
