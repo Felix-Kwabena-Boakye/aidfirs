@@ -7,8 +7,12 @@ from .serializers import EvidenceSerializer
 from backend.authentication import JWTAuthentication as BackendJWTAuthentication
 from accounts.permissions import CanManageEvidence, IsAdmin, IsInvestigator
 from django.http import HttpResponse, FileResponse
+from pymongo import errors as pymongo_errors
 import os
+import logging
 from django.conf import settings
+
+logger = logging.getLogger("evidence.views")
 
 
 from forensic_engine.recovery_engine import RecoveryEngine
@@ -98,32 +102,62 @@ class EvidenceViewSet(viewsets.ViewSet):
                 description=serializer.validated_data.get('description', ''),
                 file_size=serializer.validated_data.get('file_size', 0)
             )
-            
+
+            # Determine if Evidence.create() returned an existing duplicate record.
+            is_duplicate = "duplicate" in (evidence.tags or [])
+
             try:
                 from cases.coc_models import ChainOfCustody, TimelineEvent
                 username = getattr(request.user, 'username', 'unknown')
+                action_label = "Duplicate evidence flagged" if is_duplicate else "Evidence upload"
                 ChainOfCustody.create(
                     case_id=case_id,
                     evidence_id=str(evidence._id),
-                    action="Evidence upload",
+                    action=action_label,
                     performed_by=username,
-                    notes=f"Evidence file '{evidence.file_name}' uploaded.",
+                    notes=f"Evidence file '{evidence.file_name}' {'flagged as duplicate.' if is_duplicate else 'uploaded.'}",
                     hash_after=evidence.hash_sha256
                 )
-                TimelineEvent.create(
-                    case_id=case_id,
-                    event_type="File creation",
-                    description=f"Evidence file '{evidence.file_name}' uploaded by {username}.",
-                    severity="info"
-                )
+                if not is_duplicate:
+                    TimelineEvent.create(
+                        case_id=case_id,
+                        event_type="File creation",
+                        description=f"Evidence file '{evidence.file_name}' uploaded by {username}.",
+                        severity="info"
+                    )
             except Exception:
                 pass
-                
+
+            response_data = EvidenceSerializer(evidence).data
+
+            if is_duplicate:
+                # Structured duplicate response — forensic integrity preserved, scanning continues.
+                return Response(
+                    {
+                        "error": "Duplicate evidence detected",
+                        "hash": evidence.hash_sha256,
+                        "evidence_id": str(evidence._id),
+                        "continue": True,
+                        "evidence": response_data,
+                    },
+                    status=status.HTTP_200_OK
+                )
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except pymongo_errors.DuplicateKeyError as dup:
+            # Fallback: E11000 escaped Evidence.create() — surface structured response.
+            logger.warning(f"Unhandled E11000 in evidence create view: {dup}")
             return Response(
-                EvidenceSerializer(evidence).data,
-                status=status.HTTP_201_CREATED
+                {
+                    "error": "Duplicate evidence detected",
+                    "details": "An evidence record with this hash already exists.",
+                    "continue": True,
+                },
+                status=status.HTTP_200_OK
             )
         except Exception as e:
+            logger.error(f"Evidence create error: {e}", exc_info=True)
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     def retrieve(self, request, pk=None):
@@ -808,12 +842,13 @@ class EvidenceViewSet(viewsets.ViewSet):
                 seed = path
             sha256_hash = hashlib.sha256(seed.encode()).hexdigest()
             sha512_hash = hashlib.sha512(seed.encode()).hexdigest()
+            return sha256_hash, sha512_hash
     @staticmethod
     def resolve_evidence_file_path(evidence) -> str:
-        """
+        r"""
         Resolves the actual, valid, server-side absolute file path for an evidence item.
         Guarantees:
-        - Rejects client-supplied raw Windows drive letters (C:/, D:/, C:\, etc.) if they do not exist on the host.
+        - Rejects client-supplied raw Windows drive letters (C:/, D:/, C:\\, etc.) if they do not exist on the host.
         - Checks for stored evidence files in storage/evidence/, storage/uploads/, /tmp/.
         - Validates file existence, readability, and extension.
         - Automatically creates/initializes a managed server-side forensic container image if no raw file exists.

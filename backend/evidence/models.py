@@ -1,10 +1,14 @@
 from mongo_connection import evidence_collection
 from datetime import datetime, timezone
 from bson import ObjectId
+from pymongo import errors as pymongo_errors
 import hashlib
 import uuid
 import json
 import os
+import logging
+
+logger = logging.getLogger("evidence.models")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVIDENCE_FILE = os.path.join(BASE_DIR, 'evidence.json')
@@ -16,9 +20,11 @@ class Evidence:
     
     STATUS_CHOICES = [
         ('collected', 'Collected'),
+        ('pending_hash', 'Pending Hash'),
         ('analyzing', 'Analyzing'),
         ('analyzed', 'Analyzed'),
-        ('archived', 'Archived')
+        ('archived', 'Archived'),
+        ('duplicate', 'Duplicate Evidence'),
     ]
     
     EVIDENCE_TYPE_CHOICES = [
@@ -101,46 +107,127 @@ class Evidence:
                collector_id='', description='', file_size=0):
         """
         Create new evidence in MongoDB.
+
+        Hash-safe insertion flow:
+        - Hashes are computed only when the file already exists on disk.
+        - If hashes are unavailable (file pending acquisition / not yet on disk),
+          hash fields are OMITTED entirely from the document (not set to null).
+          This prevents the partial unique index from rejecting null duplicates.
+        - If a recovered file already has a matching SHA-256 in the collection
+          (E11000), the existing record is returned and tagged as a duplicate
+          instead of crashing the examination pipeline.
         """
-        # Compute real cryptographic hashes. If no file or file unreadable, store None.
         hashes = Evidence.compute_hashes(file_path) if file_path else {'md5': None, 'sha1': None, 'sha256': None}
-        
+
+        # Status: if hashes are available the record is 'collected'; otherwise mark
+        # as 'pending_hash' so the pipeline knows to update hashes later.
+        hashes_available = bool(hashes.get('sha256'))
+        initial_status = "collected" if hashes_available else "pending_hash"
+
         evidence_doc = {
             "case_id": case_id,
             "evidence_type": evidence_type,
             "file_name": file_name,
             "file_path": file_path,
             "file_size": file_size,
-            "hash_md5": hashes['md5'],
-            "hash_sha1": hashes['sha1'],
-            "hash_sha256": hashes['sha256'],
             "description": description,
             "collector_id": collector_id,
-            "status": "collected",
+            "status": initial_status,
             "collected_at": datetime.now(timezone.utc),
             "analyzed_at": None,
             "tags": [],
             "metadata": {}
         }
-        
-        if evidence_collection is not None:
-            result = evidence_collection.insert_one(evidence_doc)
-            evidence_doc["_id"] = result.inserted_id
-        else:
 
+        # Only include hash fields when they contain real values (never insert null).
+        if hashes.get('md5'):
+            evidence_doc["hash_md5"] = hashes['md5']
+        if hashes.get('sha1'):
+            evidence_doc["hash_sha1"] = hashes['sha1']
+        if hashes.get('sha256'):
+            evidence_doc["hash_sha256"] = hashes['sha256']
+
+        if evidence_collection is not None:
+            try:
+                result = evidence_collection.insert_one(evidence_doc)
+                evidence_doc["_id"] = result.inserted_id
+            except pymongo_errors.DuplicateKeyError as dup_err:
+                # E11000: a record with this SHA-256 already exists.
+                # Return the existing record and flag it as duplicate — do not crash.
+                sha256 = hashes.get('sha256')
+                logger.warning(
+                    f"Duplicate evidence detected (SHA-256: {sha256}). "
+                    "Returning existing record and marking as duplicate."
+                )
+                existing = evidence_collection.find_one({"hash_sha256": sha256})
+                if existing:
+                    existing_evidence = Evidence.from_dict(existing)
+                    # Tag the existing record so investigators know it's a duplicate hit.
+                    evidence_collection.update_one(
+                        {"_id": existing["_id"]},
+                        {"$addToSet": {"tags": "duplicate"}}
+                    )
+                    existing_evidence.tags = list(set(existing_evidence.tags + ["duplicate"]))
+                    return existing_evidence
+                # Fallback: return a transient in-memory doc if lookup fails.
+                evidence_doc["_id"] = str(uuid.uuid4())
+                evidence_doc["tags"] = ["duplicate"]
+                return Evidence.from_dict(evidence_doc)
+        else:
             evidence_doc["_id"] = str(uuid.uuid4())
             evidence_data = []
             if os.path.exists(EVIDENCE_FILE):
                 try:
                     with open(EVIDENCE_FILE, 'r') as f:
                         evidence_data = json.load(f)
-                except:
+                except Exception:
                     pass
             evidence_data.append(evidence_doc)
             with open(EVIDENCE_FILE, 'w') as f:
                 json.dump(evidence_data, f, indent=2, default=str)
-        
+
         return Evidence.from_dict(evidence_doc)
+
+    @staticmethod
+    def update_hashes(evidence_id, file_path):
+        """
+        Compute and persist cryptographic hashes after a file has been fully
+        recovered/written to disk.  Updates status from 'pending_hash' to
+        'collected' and stamps the hash fields.
+
+        Returns a dict with keys: success, sha256, duplicate, existing_id.
+        """
+        hashes = Evidence.compute_hashes(file_path)
+        if not hashes.get('sha256'):
+            return {"success": False, "reason": "File unreadable or not found"}
+
+        if evidence_collection is not None:
+            try:
+                evidence_collection.update_one(
+                    {"_id": ObjectId(evidence_id)},
+                    {"$set": {
+                        "hash_md5": hashes['md5'],
+                        "hash_sha1": hashes['sha1'],
+                        "hash_sha256": hashes['sha256'],
+                        "status": "collected",
+                    }}
+                )
+                return {"success": True, "sha256": hashes['sha256'], "duplicate": False}
+            except pymongo_errors.DuplicateKeyError:
+                # Another document already owns this SHA-256 hash.
+                sha256 = hashes['sha256']
+                existing = evidence_collection.find_one({"hash_sha256": sha256})
+                existing_id = str(existing["_id"]) if existing else None
+                logger.warning(
+                    f"Hash update collision: SHA-256 {sha256} belongs to evidence {existing_id}. "
+                    f"Marking evidence {evidence_id} as duplicate."
+                )
+                evidence_collection.update_one(
+                    {"_id": ObjectId(evidence_id)},
+                    {"$set": {"status": "duplicate"}, "$addToSet": {"tags": "duplicate"}}
+                )
+                return {"success": True, "sha256": sha256, "duplicate": True, "existing_id": existing_id}
+        return {"success": False, "reason": "MongoDB not available"}
     
     @staticmethod
     def get_by_id(evidence_id):

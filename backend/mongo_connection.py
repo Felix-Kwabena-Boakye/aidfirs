@@ -298,9 +298,32 @@ def setup_indexes():
         logger.debug(f"Evidence case index note: {e}")
     
     try:
-        evidence_collection.create_index("hash_sha256", name="evidence_hash_idx")
+        # Clean null/None hash_sha256 fields from existing documents
+        evidence_collection.update_many(
+            {"$or": [{"hash_sha256": None}, {"hash_sha256": ""}]},
+            {"$unset": {"hash_sha256": ""}}
+        )
+
+        # Drop legacy non-partial unique indexes if present
+        existing_info = evidence_collection.index_information()
+        for idx_name in ["hash_sha256_1", "evidence_hash_idx"]:
+            if idx_name in existing_info:
+                try:
+                    evidence_collection.drop_index(idx_name)
+                    logger.info(f"Dropped old index '{idx_name}' from evidence collection")
+                except Exception as drop_err:
+                    logger.debug(f"Drop index note for '{idx_name}': {drop_err}")
+
+        # Create partial unique index: only indexes non-null string hashes
+        evidence_collection.create_index(
+            "hash_sha256",
+            name="evidence_hash_sha256_partial_idx",
+            unique=True,
+            partialFilterExpression={"hash_sha256": {"$type": "string"}}
+        )
+        logger.info("Configured partial unique index on evidence.hash_sha256")
     except Exception as e:
-        logger.debug(f"Evidence hash index note: {e}")
+        logger.warning(f"Evidence partial hash index note: {e}")
     
     try:
         evidence_collection.create_index("status", name="evidence_status_idx")
