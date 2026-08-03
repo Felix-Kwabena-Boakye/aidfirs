@@ -499,12 +499,13 @@ class RecoveredFileHashVerifyView(APIView):
         md5_match = (computed_md5 == file_record.hash_md5) if file_record.hash_md5 else None
         sha1_match = (computed_sha1 == file_record.hash_sha1) if file_record.hash_sha1 else None
 
-        all_match = all(v for v in [sha256_match, md5_match, sha1_match] if v is not None)
-        any_mismatch = any(v is False for v in [sha256_match, md5_match, sha1_match])
+        stored_hashes = [v for v in [file_record.hash_sha256, file_record.hash_md5, file_record.hash_sha1] if v]
+        match_values = [v for v in [sha256_match, md5_match, sha1_match] if v is not None]
+        any_mismatch = any(v is False for v in match_values)
 
         if any_mismatch:
             verification_status = "modified"
-        elif all_match:
+        elif stored_hashes and all(match_values):
             verification_status = "verified"
         else:
             verification_status = "unverifiable"
@@ -661,6 +662,11 @@ class RecoveredFileDownloadView(APIView):
                 "error": "Integrity check failed: Server file SHA-256 mismatch. Potential tampering detected!"
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        integrity_status = (
+            "verified" if (file_record.hash_sha256 and calculated_hash == file_record.hash_sha256)
+            else "unverified (no stored hash on record)"
+        )
+
         # Log audit trail
         AuditLog.log(
             user_id=str(request.user._id),
@@ -677,14 +683,14 @@ class RecoveredFileDownloadView(APIView):
             evidence_id=str(file_record._id),
             action="FILE_DOWNLOADED",
             performed_by=request.user.username,
-            notes=f"File {file_record.filename} downloaded. SHA-256 integrity verified.",
+            notes=f"File {file_record.filename} downloaded. SHA-256 integrity: {integrity_status}.",
             hash_before=file_record.hash_sha256,
             hash_after=calculated_hash
         )
         _log_timeline(
             case_id=file_record.case_id,
             event_type="FILE_DOWNLOADED",
-            description=f"File '{file_record.filename}' downloaded by {request.user.username}. Integrity: verified.",
+            description=f"File '{file_record.filename}' downloaded by {request.user.username}. Integrity: {integrity_status}.",
             actor=request.user.username,
             evidence_id=str(file_record._id),
         )

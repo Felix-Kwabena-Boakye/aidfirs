@@ -73,7 +73,7 @@ class CaseViewSet(viewsets.ViewSet):
             ChainOfCustody.create(
                 case_id=case._id,
                 evidence_id=None,
-                action="Evidence upload",  # Wait, using "Evidence upload" or "Case Creation"
+                action="Case Creation",
                 performed_by=username,
                 notes=f"Case '{case.title}' created with case number '{case.case_number}'."
             )

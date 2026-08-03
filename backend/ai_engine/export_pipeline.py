@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import pandas as pd
 from pymongo import MongoClient
 
@@ -11,15 +12,37 @@ from mongo_connection import get_db, MONGO_AVAILABLE
 # Compute backend root so the CSV path is always absolute and correct.
 _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+_FINAL_COLS = ["size_bytes", "file_type", "entropy", "partition", "ai_prediction"]
+
 def export_dataset(output_path=None):
+    """
+    Export a training dataset and return its provenance.
+
+    Provenance fields returned: data_source ('real' | 'mixed' | 'synthetic'),
+    total_rows, real_rows, synthetic_rows.
+
+    Rules for truthfulness:
+    - Real rows are only included when they carry a genuine ai_prediction label.
+      Labels are never guessed from entropy.
+    - If no real labelled rows exist, the dataset is synthetic-only and training
+      must be refused by the caller (train_and_save_model).
+    - Provenance is also written to a sidecar JSON so training always knows the
+      dataset source, even when invoked standalone.
+    """
     if output_path is None:
         output_path = os.path.join(_BACKEND_ROOT, "forensics_training_data.csv")
     print("Initializing Forensic Dataset Export Pipeline...")
-    
+
+    real_rows = 0
+    synthetic_rows = 0
+    data_source = None
+
     db = get_db()
     if db is None:
-        print("MongoDB is not available. Simulating dataset export with synthesized forensic features...")
+        print("MongoDB is not available. Exporting synthesized forensic features (training will refuse this)...")
         dataset = synthesize_forensic_data(100)
+        synthetic_rows = len(dataset)
+        data_source = "synthetic"
     else:
         try:
             evidence = list(db.evidence.find())
@@ -27,10 +50,8 @@ def export_dataset(output_path=None):
             
             print(f"Retrieved {len(evidence)} evidence documents and {len(analysis)} analysis results.")
             
-            if len(evidence) == 0 or len(analysis) == 0:
-                print("Insufficient documents in database. Merging and synthesizing complete dataset...")
-                dataset = synthesize_forensic_data(100)
-            else:
+            clean_data = []
+            if len(evidence) > 0 and len(analysis) > 0:
                 evidence_df = pd.DataFrame(evidence)
                 analysis_df = pd.DataFrame(analysis)
                 
@@ -47,7 +68,6 @@ def export_dataset(output_path=None):
                     
                 merged_df = evidence_df.merge(analysis_df, left_on=left_on, right_on=right_on)
                 
-                clean_data = []
                 for _, row in merged_df.iterrows():
                     # size_bytes
                     size = row.get("file_size", row.get("size_bytes", 1024))
@@ -73,17 +93,17 @@ def export_dataset(output_path=None):
                     if partition is None or pd.isna(partition):
                         partition = "NTFS"
                         
-                    # ai_prediction / recoverable target
+                    # ai_prediction / recoverable target — only a genuine label counts.
                     ai_pred = row.get("ai_prediction")
                     if ai_pred is None or pd.isna(ai_pred):
-                        # check in findings
                         findings = row.get("findings")
                         if isinstance(findings, dict):
                             ai_pred = findings.get("ai_prediction")
                             
                     if ai_pred is None or pd.isna(ai_pred):
-                        # Guess based on entropy (lower entropy = more recoverable)
-                        ai_pred = 1 if float(entropy) < 6.0 else 0
+                        # No genuine recoverability label: skip the row rather than
+                        # fabricate a target from entropy.
+                        continue
                         
                     clean_data.append({
                         "size_bytes": int(size),
@@ -92,29 +112,57 @@ def export_dataset(output_path=None):
                         "partition": str(partition),
                         "ai_prediction": int(ai_pred)
                     })
-                    
+                real_rows = len(clean_data)
                 dataset = pd.DataFrame(clean_data)
-                
-                # If the dataset is too small, supplement with synthesized data
-                if len(dataset) < 20:
-                    print(f"Dataset has only {len(dataset)} merged rows. Supplementing with synthesized forensic samples...")
-                    synth_df = synthesize_forensic_data(100 - len(dataset))
-                    dataset = pd.concat([dataset, synth_df], ignore_index=True)
+            else:
+                dataset = pd.DataFrame(columns=_FINAL_COLS)
+
+            if len(dataset) == 0:
+                print("No real labelled evidence rows found. Exporting synthesized dataset (training will refuse this)...")
+                dataset = synthesize_forensic_data(100)
+                synthetic_rows = len(dataset)
+                data_source = "synthetic"
+            elif len(dataset) < 20:
+                print(f"Dataset has only {len(dataset)} real labelled rows. Supplementing with synthesized forensic samples...")
+                synth_df = synthesize_forensic_data(100 - len(dataset))
+                synthetic_rows = len(synth_df)
+                dataset = pd.concat([dataset, synth_df], ignore_index=True)
+                data_source = "mixed"
+            else:
+                data_source = "real"
         except Exception as e:
-            print(f"Error querying MongoDB: {e}. Falling back to synthesized dataset.")
+            print(f"Error querying MongoDB: {e}. Exporting synthesized dataset (training will refuse this).")
             dataset = synthesize_forensic_data(100)
-            
-    # Process target columns
-    final_cols = ["size_bytes", "file_type", "entropy", "partition", "ai_prediction"]
+            synthetic_rows = len(dataset)
+            data_source = "synthetic"
     
-    # Save CSV
-    dataset[final_cols].to_csv(output_path, index=False)
-    print(f"Successfully exported {len(dataset)} samples to {output_path}")
-    return output_path
+    dataset[_FINAL_COLS].to_csv(output_path, index=False)
+    total_rows = len(dataset)
+    print(f"Successfully exported {total_rows} samples to {output_path} (source: {data_source})")
+
+    provenance = {
+        "path": output_path,
+        "total_rows": int(total_rows),
+        "real_rows": int(real_rows),
+        "synthetic_rows": int(synthetic_rows),
+        "data_source": data_source,
+    }
+
+    # Write a sidecar provenance file so training always knows the dataset source.
+    try:
+        sidecar = f"{output_path}.provenance.json"
+        with open(sidecar, "w") as f:
+            json.dump(provenance, f, indent=2)
+    except Exception:
+        pass
+
+    return provenance
 
 def synthesize_forensic_data(num_samples=100):
     """
-    Synthesize realistic forensic evidence metadata for training classical ML models.
+    Synthesize forensic evidence metadata for exploration/load testing only.
+    Rows produced here are explicitly synthetic and are NEVER used to train a
+    model that the system serves as verified.
     """
     import random
     

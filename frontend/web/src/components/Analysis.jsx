@@ -394,8 +394,11 @@ const Analysis = () => {
                       <div className="bg-gray-900/40 border border-gray-700/60 rounded-xl p-4">
                         <p className="font-semibold text-gray-400 mb-2 uppercase text-xs tracking-wide font-mono">Model Details</p>
                         <p className="font-sans"><span className="font-medium text-gray-500">Name:</span> {modelInfo.model_name}</p>
-                        <p className="font-sans"><span className="font-medium text-gray-500">Status:</span> <span className="text-green-400 font-bold">{modelInfo.status}</span></p>
+                        <p className="font-sans"><span className="font-medium text-gray-500">Status:</span> <span className={modelInfo.trusted ? 'text-green-400 font-bold' : 'text-amber-400 font-bold'}>{modelInfo.status}{modelInfo.trusted === false ? ' (untrusted)' : ''}</span></p>
                         <p className="font-sans"><span className="font-medium text-gray-500">Trained:</span> {modelInfo.trained_at ? new Date(modelInfo.trained_at).toLocaleString() : 'N/A'}</p>
+                        <p className="font-sans"><span className="font-medium text-gray-500">Data source:</span> {modelInfo.data_source || 'N/A'}</p>
+                        <p className="font-sans"><span className="font-medium text-gray-500">Training method:</span> {modelInfo.training_method || 'N/A'}</p>
+                        <p className="font-sans"><span className="font-medium text-gray-500">Real / synthetic rows:</span> {modelInfo.real_rows ?? 'N/A'} / {modelInfo.synthetic_rows ?? 'N/A'}</p>
                       </div>
                       <div className="bg-gray-900/40 border border-gray-700/60 rounded-xl p-4">
                         <p className="font-semibold text-gray-400 mb-2 uppercase text-xs tracking-wide font-mono">Features Used</p>
@@ -408,6 +411,12 @@ const Analysis = () => {
                         </div>
                       </div>
                     </div>
+
+                    {modelInfo.trusted === false && modelInfo.message && (
+                      <div className="mt-4 rounded-xl p-4 border bg-amber-950/20 border-amber-500/30 text-sm text-amber-200/90">
+                        <span className="font-bold text-amber-400">⚠️ Model is not trusted for prediction:</span> {modelInfo.message}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -493,7 +502,7 @@ const Analysis = () => {
                 </div>
               </form>
 
-              {prediction && (
+              {prediction && prediction.status === 'model_based' && (
                 <div className={`rounded-xl p-5 border ${
                   prediction.prediction === 1
                     ? 'bg-green-950/20 border-green-500/30'
@@ -506,7 +515,7 @@ const Analysis = () => {
                         <p className={`text-xl font-bold ${prediction.prediction === 1 ? 'text-green-400' : 'text-rose-400'}`}>
                           {prediction.prediction === 1 ? 'RECOVERABLE' : 'UNRECOVERABLE'}
                         </p>
-                        <p className="text-xs text-gray-400">ML Classification Result</p>
+                        <p className="text-xs text-gray-400">ML Classification Result (verified model)</p>
                       </div>
                     </div>
                     <div className={`text-center rounded-xl px-4 py-2 border ${
@@ -529,6 +538,19 @@ const Analysis = () => {
                   {prediction.anomalies?.length === 0 && (
                     <p className="text-xs text-green-400 mt-2">✓ No anomalies detected in the feature set.</p>
                   )}
+                </div>
+              )}
+
+              {prediction && prediction.status === 'heuristic' && (
+                <div className="rounded-xl p-5 border bg-amber-950/20 border-amber-500/30">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-3xl">⚠️</span>
+                    <div>
+                      <p className="text-lg font-bold text-amber-400">NO PREDICTION PRODUCED</p>
+                      <p className="text-xs text-gray-400">No trusted, provenance-verified model is loaded</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-200/90">{prediction.message}</p>
                 </div>
               )}
             </div>

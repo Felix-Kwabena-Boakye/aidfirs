@@ -31,7 +31,9 @@ class ForensicModel:
     def forward(self, input_data, system_override=None):
         """
         Forward pass. 
-        Tries Anthropic Claude 3.5 Sonnet, then local LLM via Ollama. Falls back to mock if offline.
+        Tries Anthropic Claude 3.5 Sonnet, then local LLM via Ollama.
+        If neither is reachable, returns an explicit unavailability message — never
+        a fabricated analysis result.
         """
         start_time = time.perf_counter()
         sys_prompt = system_override or self.system_prompt
@@ -73,7 +75,7 @@ class ForensicModel:
         except requests.exceptions.RequestException as e:
             print(f"[Forensic AI] Local Neural link severed ({e}). Falling back to mock engine.")
         
-        # 3. Fallback Simulate 'Instant' processing
+        # 3. Fallback: return an explicit unavailability message
         latency = (time.perf_counter() - start_time) * 1000 # convert to ms
         fallback_msg = f"[FALLBACK OCCURRED] My multi-layered inference grid intercepted your request:\n'{input_data}'\n\nHowever, my primary local inference core is currently offline. Please ensure Ollama is running or valid Anthropic API key is provided."
         return fallback_msg, latency
@@ -99,6 +101,29 @@ if __name__ == "__main__":
 # Scikit-Learn Model Loading & Predict Integration
 # --------------------------------------------------
 _cached_ml_model = None
+
+def _is_model_trusted(model_doc):
+    """
+    A model is only trusted for verified predictions when it was trained on real
+    (or mixed) labelled data with recorded provenance. Models trained purely on
+    synthetic data, or legacy models lacking provenance metadata, are untrusted.
+    """
+    data_source = (model_doc.get("data_source") or "").strip()
+    training_method = (model_doc.get("training_method") or "").strip()
+    if data_source == "synthetic":
+        return False
+    if training_method in ("real", "real_with_synthetic_supplement"):
+        return True
+    return False
+
+def _extract_provenance(model_doc):
+    """Read dataset provenance metadata recorded at training time."""
+    return {
+        "data_source": model_doc.get("data_source"),
+        "real_rows": model_doc.get("real_rows"),
+        "synthetic_rows": model_doc.get("synthetic_rows"),
+        "training_method": model_doc.get("training_method"),
+    }
 
 def load_ml_model():
     """
@@ -126,9 +151,11 @@ def load_ml_model():
                     "mappings": model_doc.get("mappings", {}),
                     "accuracy": model_doc.get("accuracy", 0.0),
                     "trained_at": model_doc.get("trained_at"),
-                    "features": model_doc.get("features", [])
+                    "features": model_doc.get("features", []),
+                    "provenance": _extract_provenance(model_doc),
+                    "trusted": _is_model_trusted(model_doc),
                 }
-                print(f"[CRITICAL] Loaded model from MongoDB Atlas (Accuracy: {model_doc.get('accuracy'):.4f}, Trained: {model_doc.get('trained_at')})")
+                print(f"[CRITICAL] Loaded model from MongoDB Atlas (Accuracy: {model_doc.get('accuracy'):.4f}, Trained: {model_doc.get('trained_at')}, Trusted: {_cached_ml_model['trusted']})")
                 return _cached_ml_model
         except Exception as e:
             print(f"Error loading model from MongoDB Atlas: {e}")
@@ -146,20 +173,24 @@ def load_ml_model():
                 "mappings": model_doc.get("mappings", {}),
                 "accuracy": model_doc.get("accuracy", 0.0),
                 "trained_at": model_doc.get("trained_at"),
-                "features": model_doc.get("features", [])
+                "features": model_doc.get("features", []),
+                "provenance": _extract_provenance(model_doc),
+                "trusted": _is_model_trusted(model_doc),
             }
-            print(f"[CRITICAL] Loaded model from local storage fallback (Accuracy: {model_doc.get('accuracy'):.4f})")
+            print(f"[CRITICAL] Loaded model from local storage fallback (Accuracy: {model_doc.get('accuracy'):.4f}, Trusted: {_cached_ml_model['trusted']})")
             return _cached_ml_model
         except Exception as e:
             print(f"Error loading local model: {e}")
             
-    print("[WARNING] No active ML model found in MongoDB or local storage. Using heuristic model fallback.")
+    print("[WARNING] No active ML model found in MongoDB or local storage. Predictions will not be served.")
     _cached_ml_model = {
         "model": None,
         "mappings": {},
         "accuracy": 0.0,
         "trained_at": None,
-        "features": []
+        "features": [],
+        "provenance": None,
+        "trusted": False,
     }
     return _cached_ml_model
 
@@ -167,32 +198,21 @@ def load_ml_model():
 def predict_recoverability(size_bytes, file_type, entropy, partition):
     """
     Predict recoverability and return (prediction, confidence_score, anomaly_detected).
-    Uses the Scikit-Learn model if loaded, otherwise falls back to a deterministic heuristic.
+
+    Only returns a prediction when a trusted, provenance-verified ML model is loaded.
+    When no trusted model exists it returns (None, None, []) so callers can surface an
+    honest {"status": "heuristic", "confidence": null, "verified": false} result instead
+    of fabricating a confidence score from entropy heuristics.
     """
     import numpy as np
     
     ml_info = load_ml_model()
     model = ml_info.get("model")
+    trusted = ml_info.get("trusted", False)
     
-    # 1. Fallback to heuristic if no model is available
-    if model is None:
-        ent = float(entropy)
-        ft = str(file_type).lower()
-        if ent > 7.1:
-            pred = 0
-            conf = 0.85
-        elif ft in ["log_file", "registry", "email"] and ent < 5.0:
-            pred = 1
-            conf = 0.90
-        else:
-            pred = 1 if ent < 5.8 else 0
-            conf = 0.70
-            
-        anomalies = []
-        if ent > 7.5:
-            anomalies.append("Extreme entropy anomaly (possible encrypted ransomware payload)")
-            
-        return pred, conf, anomalies
+    # 1. No trusted model available: never fabricate a prediction or confidence score.
+    if model is None or not trusted:
+        return None, None, []
         
     # 2. Scikit-learn prediction
     try:
@@ -218,17 +238,15 @@ def predict_recoverability(size_bytes, file_type, entropy, partition):
         probs = model.predict_proba(features)[0]
         conf = float(probs[pred])
         
-        # Simple anomaly check
+        # Descriptive, measured anomaly flags (no fabricated conclusions)
         anomalies = []
         if float(entropy) > 7.5:
-            anomalies.append("Extreme entropy anomaly (possible encrypted ransomware payload)")
+            anomalies.append("High byte entropy (value above 7.5): possible compression or encryption; manual inspection required.")
         if float(entropy) < 1.0 and int(size_bytes) > 1024 * 1024:
-            anomalies.append("Zero/low entropy anomaly on large file (possible sector wiping or padding)")
+            anomalies.append("Low byte entropy on a file larger than 1 MiB: possible sector wiping or padding; manual inspection required.")
             
         return pred, conf, anomalies
     except Exception as e:
-        print(f"Error during Scikit-Learn prediction: {e}. Falling back to heuristic.")
-        ent = float(entropy)
-        pred = 1 if ent < 6.0 else 0
-        return pred, 0.5, []
+        print(f"Error during Scikit-Learn prediction: {e}.")
+        return None, None, []
 

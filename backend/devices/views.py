@@ -156,8 +156,6 @@ class DeviceScanView(APIView):
                             mount_point=raw.get("mount_point", ""),
                             capacity_bytes=int(raw.get("capacity_bytes") or 0),
                             drive_type=raw.get("drive_type", "USB Drive"),
-                            hash_sha256=raw.get("hash_sha256", ""),
-                            hash_md5=raw.get("hash_md5", ""),
                         )
                 except Exception as ex:
                     print(f"[DeviceScanView] Device save notice: {ex}")
@@ -261,8 +259,6 @@ class DeviceRegisterView(APIView):
             mount_point=data.get("mount_point", ""),
             capacity_bytes=data.get("capacity_bytes", 0),
             drive_type=data.get("drive_type", "USB Drive"),
-            hash_sha256=data.get("hash_sha256", ""),
-            hash_md5=data.get("hash_md5", ""),
         )
 
         # Log forensic audit trail
@@ -284,9 +280,12 @@ class DeviceRegisterView(APIView):
                     f"Device '{device.device_name}' (Serial: {device.serial_number}, "
                     f"Model: {device.model}, Bus: {device.bus_type}) "
                     f"connected via AIDFIRS Forensic Agent. "
-                    f"SHA256 fingerprint: {device.hash_sha256[:16]}..."
+                    f"Identity fingerprint: {device.device_fingerprint[:16]}... "
+                    f"(deterministic serial:model digest — not an evidence content hash)"
                 ),
-                hash_after=device.hash_sha256
+                hash_before='',
+                hash_after='',
+                hash_status="hash unavailable",
             )
             TimelineEvent.create(
                 case_id="global",
@@ -304,7 +303,7 @@ class DeviceRegisterView(APIView):
                     "filesystem": device.filesystem,
                     "size_gb": device.size_gb,
                     "bus_type": device.bus_type,
-                    "hash_sha256": device.hash_sha256,
+                    "device_fingerprint": device.device_fingerprint,
                 }
             )
         except Exception as e:

@@ -35,9 +35,9 @@ class DeviceSerializer(serializers.Serializer):
     drive_type = serializers.CharField(max_length=100, allow_blank=True, required=False, default='USB Drive')
     interface = serializers.CharField(max_length=100, allow_blank=True, required=False, default='')
 
-    # Hashes
-    hash_sha256 = serializers.CharField(max_length=64, allow_blank=True, required=False, default='')
-    hash_md5 = serializers.CharField(max_length=32, allow_blank=True, required=False, default='')
+    # Identity fingerprints (deterministic serial:model digests — NOT content hashes)
+    device_fingerprint = serializers.CharField(max_length=64, allow_blank=True, required=False, default='')
+    identity_digest = serializers.CharField(max_length=32, allow_blank=True, required=False, default='')
 
     # Backward compat fields
     size_gb_compat = serializers.FloatField(source='size_gb', required=False, default=0.0)

@@ -794,56 +794,7 @@ class EvidenceViewSet(viewsets.ViewSet):
             pass
             
         return metadata
-    @staticmethod
-    def safe_hash_device_or_file(path: str) -> tuple[str, str]:
-        """
-        Safely hash a path. If it's a file, compute real SHA256/SHA512.
-        If it's a raw disk device, directory, or raises access errors,
-        generate a stable metadata-based hash to prevent crashes and hangs.
-        """
-        import os
-        import hashlib
-        
-        is_dir = os.path.isdir(path)
-        is_raw_disk = False
-        
-        clean_path = path.strip().rstrip('\\').rstrip('/')
-        if os.name == 'nt':
-            if len(clean_path) == 2 and clean_path[1] == ':':
-                is_raw_disk = True
-            elif clean_path.startswith('\\\\.\\'):
-                is_raw_disk = True
-        else:
-            if clean_path.startswith('/dev/'):
-                is_raw_disk = True
 
-        if is_dir or is_raw_disk:
-            try:
-                st = os.stat(path)
-                seed = f"{path}_{st.st_size}_{st.st_mtime}"
-            except Exception:
-                seed = path
-            sha256_hash = hashlib.sha256(seed.encode()).hexdigest()
-            sha512_hash = hashlib.sha512(seed.encode()).hexdigest()
-            return sha256_hash, sha512_hash
-
-        try:
-            sha256 = hashlib.sha256()
-            sha512 = hashlib.sha512()
-            with open(path, 'rb') as f:
-                for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                    sha256.update(chunk)
-                    sha512.update(chunk)
-            return sha256.hexdigest(), sha512.hexdigest()
-        except Exception:
-            try:
-                st = os.stat(path)
-                seed = f"{path}_{st.st_size}_{st.st_mtime}"
-            except Exception:
-                seed = path
-            sha256_hash = hashlib.sha256(seed.encode()).hexdigest()
-            sha512_hash = hashlib.sha512(seed.encode()).hexdigest()
-            return sha256_hash, sha512_hash
     @staticmethod
     def resolve_evidence_file_path(evidence) -> str:
         r"""
@@ -852,7 +803,7 @@ class EvidenceViewSet(viewsets.ViewSet):
         - Rejects client-supplied raw Windows drive letters (C:/, D:/, C:\\, etc.) if they do not exist on the host.
         - Checks for stored evidence files in storage/evidence/, storage/uploads/, /tmp/.
         - Validates file existence, readability, and extension.
-        - Automatically creates/initializes a managed server-side forensic container image if no raw file exists.
+        - Raises FileNotFoundError when no real evidence image exists on disk. Never fabricates an evidence image.
         """
         if not evidence:
             raise FileNotFoundError("Evidence object is None")
@@ -895,24 +846,16 @@ class EvidenceViewSet(viewsets.ViewSet):
                 for f in files:
                     if f.lower().endswith(('.dd', '.img', '.raw', '.e01', '.iso')):
                         return os.path.abspath(os.path.join(root, f))
-            return os.path.abspath(raw_path)
+            # Directory found but contains no evidence image: raise instead of treating the folder as an image.
+            raise FileNotFoundError(
+                f"No evidence image found inside directory for ID '{ev_id}'. "
+                f"Specified path: '{raw_path}'"
+            )
 
-        # 5. Initialize a managed server-side forensic container image (.raw) in storage/evidence/
-        evidence_dir = os.path.join(settings.BASE_DIR, 'storage', 'evidence')
-        os.makedirs(evidence_dir, exist_ok=True)
-        target_img = os.path.join(evidence_dir, f"{ev_id}.raw")
-
-        if not os.path.exists(target_img):
-            try:
-                with open(target_img, 'wb') as f:
-                    f.write(b'\x00' * (1024 * 1024))
-            except Exception:
-                pass
-
-        if os.path.exists(target_img):
-            return target_img
-
-        raise FileNotFoundError(f"Evidence file not found on server for ID '{ev_id}'. Specified path: '{raw_path}'")
+        raise FileNotFoundError(
+            f"Evidence file not found on server for ID '{ev_id}'. "
+            f"Specified path: '{raw_path}'"
+        )
 
 
     @action(detail=True, methods=['post'], url_path='recover-and-analyze')
@@ -1048,10 +991,17 @@ class EvidenceViewSet(viewsets.ViewSet):
                             "file_size": rf.get('size', 0),
                             "creation_date": meta.get('created_date'),
                             "last_modified_date": meta.get('modified_date'),
-                            "recovery_confidence": "Restored",
+                            "recovery_confidence": "Recovered and Validated",
                             "hash_sha256": sha256_hash,
                             "hash_sha512": sha512_hash,
-                            "metadata": meta
+                            "metadata": meta,
+                            "provenance": {
+                                "source": "recycle_bin_metadata",
+                                "process": "AIDFIRS recovery pipeline",
+                                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                "confidence": "Recovered and Validated",
+                                "hash_computed": True,
+                            }
                         }
                         recovered_list.append(rec_file)
                         idx += 1
@@ -1078,10 +1028,18 @@ class EvidenceViewSet(viewsets.ViewSet):
                             "file_size": cf.get('size', 0),
                             "creation_date": meta.get('created_date'),
                             "last_modified_date": meta.get('modified_date'),
-                            "recovery_confidence": "Carved",
+                            "recovery_confidence": cf.get('recovery_confidence') or 'Unverified Carving Candidate',
                             "hash_sha256": sha256_hash,
                             "hash_sha512": sha512_hash,
-                            "metadata": meta
+                            "metadata": meta,
+                            "provenance": {
+                                "source": "signature_carving",
+                                "process": "AIDFIRS recovery pipeline",
+                                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                "confidence": cf.get('recovery_confidence') or 'Unverified Carving Candidate',
+                                "sector_offset": cf.get('offset', '0'),
+                                "hash_computed": True,
+                            }
                         }
                         recovered_list.append(rec_file)
                         idx += 1
@@ -1273,10 +1231,15 @@ class EvidenceViewSet(viewsets.ViewSet):
             for file_info in selected_files:
                 restored_paths.append(file_info.get('file_name'))
 
+        if destination == 'download_local':
+            action_desc = f"Prepared {len(restored_paths)} recovered file(s) for download by {username}."
+        else:
+            action_desc = f"Restored {len(restored_paths)} file(s) to {destination} by {username}."
+
         TimelineEvent.create(
             case_id=evidence.case_id,
             event_type="Recovery events",
-            description=f"Restored {len(restored_paths)} files to {destination} by {username}.",
+            description=action_desc,
             severity="info"
         )
 

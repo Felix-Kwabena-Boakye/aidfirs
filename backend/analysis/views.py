@@ -340,6 +340,26 @@ class AnalysisResultViewSet(viewsets.ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        # No trusted trained model: return an honest heuristic status with a null
+        # confidence and verified=false. Never fabricate a recoverability score.
+        if pred is None:
+            return Response({
+                "status": "heuristic",
+                "confidence": None,
+                "verified": False,
+                "message": (
+                    "No trusted, provenance-verified ML model is loaded. "
+                    "No recoverability prediction was produced. "
+                    "Train a model on real labelled evidence before requesting predictions."
+                ),
+                "features": {
+                    "size_bytes": size_bytes,
+                    "file_type": file_type,
+                    "entropy": entropy,
+                    "partition": partition,
+                }
+            }, status=status.HTTP_200_OK)
+
         label = "recoverable" if pred == 1 else "unrecoverable"
 
         # Optionally write back prediction into analysis_results collection
@@ -354,6 +374,7 @@ class AnalysisResultViewSet(viewsets.ViewSet):
                         'recoverable_label': label,
                         'confidence': round(confidence, 4),
                         'anomalies': anomalies,
+                        'verified': True,
                         'features': {
                             'size_bytes': size_bytes,
                             'file_type': file_type,
@@ -361,16 +382,18 @@ class AnalysisResultViewSet(viewsets.ViewSet):
                             'partition': partition,
                         }
                     },
-                    severity='critical' if pred == 0 else 'info',
+                    severity='info',
                     analyzed_by=str(request.user._id) if hasattr(request.user, '_id') else '',
                 )
             except Exception:
                 pass  # Write-back failure is non-critical
 
         return Response({
+            "status": "model_based",
             "prediction": pred,
             "label": label,
             "confidence": round(confidence * 100, 2),
+            "verified": True,
             "anomalies": anomalies,
             "features": {
                 "size_bytes": size_bytes,
@@ -407,8 +430,20 @@ class AnalysisResultViewSet(viewsets.ViewSet):
                         "recall": round(float(doc.get("recall", 0)), 4),
                         "f1": round(float(doc.get("f1", 0)), 4),
                         "features": doc.get("features", []),
+                        "data_source": doc.get("data_source"),
+                        "real_rows": doc.get("real_rows"),
+                        "synthetic_rows": doc.get("synthetic_rows"),
+                        "training_method": doc.get("training_method"),
                         "status": doc.get("status"),
                     }
+                    if not doc.get("training_method") or doc.get("data_source") == "synthetic":
+                        model_meta["trusted"] = False
+                        model_meta["message"] = (
+                            "This model lacks verifiable provenance or was trained on synthetic-only data. "
+                            "Predictions from it are not served. Train on real labelled evidence."
+                        )
+                    else:
+                        model_meta["trusted"] = True
             except Exception as e:
                 pass
 
@@ -421,12 +456,23 @@ class AnalysisResultViewSet(viewsets.ViewSet):
                     "trained_at": ml_info["trained_at"].isoformat() if ml_info.get("trained_at") else None,
                     "accuracy": round(float(ml_info.get("accuracy", 0)), 4),
                     "features": ml_info.get("features", []),
+                    "data_source": (ml_info.get("provenance") or {}).get("data_source"),
+                    "real_rows": (ml_info.get("provenance") or {}).get("real_rows"),
+                    "synthetic_rows": (ml_info.get("provenance") or {}).get("synthetic_rows"),
+                    "training_method": (ml_info.get("provenance") or {}).get("training_method"),
+                    "trusted": ml_info.get("trusted", False),
                     "status": "cached",
                 }
+                if not ml_info.get("trusted", False):
+                    model_meta["message"] = (
+                        "This cached model lacks verifiable provenance or was trained on synthetic-only data. "
+                        "Predictions from it are not served. Train on real labelled evidence."
+                    )
             else:
                 model_meta = {
                     "model_name": None,
                     "status": "no_model_loaded",
+                    "trusted": False,
                     "message": "No trained model available. Run the training pipeline first."
                 }
 
@@ -444,57 +490,71 @@ class AnalysisResultViewSet(viewsets.ViewSet):
         import ai_engine.forensic_model as fm
         
         try:
-            # 1. Export fresh dataset
-            export_dataset()
+            # 1. Export fresh dataset (returns provenance: data_source, real/synthetic row counts)
+            provenance = export_dataset()
             
-            # 2. Train model
-            train_and_save_model()
+            # 2. Train model — refuses when the dataset is synthetic-only
+            train_result = train_and_save_model(provenance=provenance)
             
-            # 3. Clear memory cache to force reload
+            if train_result.get("status") == "refused":
+                return Response({
+                    "success": False,
+                    "status": "refused",
+                    "reason": train_result.get("reason", "Synthetic-only dataset"),
+                    "provenance": {
+                        "data_source": provenance.get("data_source"),
+                        "total_rows": provenance.get("total_rows"),
+                        "real_rows": provenance.get("real_rows"),
+                        "synthetic_rows": provenance.get("synthetic_rows"),
+                    },
+                    "message": (
+                        "Training was refused because no real labelled evidence was available. "
+                        "A model trained on synthetic data would not produce verified forensic "
+                        "predictions. Acquire real evidence with recoverability labels first."
+                    ),
+                }, status=status.HTTP_200_OK)
+            
+            metrics = train_result.get("metrics", {})
+            provenance_out = train_result.get("provenance", {})
+            
+            # Clear memory cache to force reload of the freshly trained model
             fm._cached_ml_model = None
+            load_ml_model()
             
-            # 4. Load the newly trained model info
-            ml_info = load_ml_model()
-            
-            # 5. Get model info from database or local
-            from mongo_connection import get_ai_models_collection
-            ai_models_col = get_ai_models_collection()
-            model_doc = None
-            if ai_models_col is not None:
-                model_doc = ai_models_col.find_one({"model_name": "random_forest_recoverability", "status": "active"})
-            
-            if model_doc:
-                metrics = {
-                    "accuracy": round(float(model_doc.get("accuracy", 0)), 4),
-                    "precision": round(float(model_doc.get("precision", 0)), 4),
-                    "recall": round(float(model_doc.get("recall", 0)), 4),
-                    "f1": round(float(model_doc.get("f1", 0)), 4),
-                    "trained_at": model_doc.get("trained_at").isoformat() if model_doc.get("trained_at") else None,
-                    "features": model_doc.get("features", []),
-                    "status": "active"
-                }
+            # Layman-friendly, evidence-based explanations (no fabricated claims)
+            training_method = provenance_out.get("training_method", "unknown")
+            if training_method == "real":
+                method_note = (
+                    f"Trained exclusively on {provenance_out.get('real_rows')} real labelled evidence row(s)."
+                )
+            elif training_method == "real_with_synthetic_supplement":
+                method_note = (
+                    f"Trained on {provenance_out.get('real_rows')} real labelled evidence row(s) "
+                    f"supplemented with {provenance_out.get('synthetic_rows')} synthesized row(s). "
+                    "Reported metrics are computed on this mixed dataset and are not a verified "
+                    "real-world measure."
+                )
             else:
-                metrics = {
-                    "accuracy": round(float(ml_info.get("accuracy", 0)), 4),
-                    "precision": round(float(ml_info.get("precision", 0)), 4),
-                    "recall": round(float(ml_info.get("recall", 0)), 4),
-                    "f1": round(float(ml_info.get("f1", 0)), 4),
-                    "trained_at": ml_info.get("trained_at").isoformat() if ml_info.get("trained_at") else None,
-                    "features": ml_info.get("features", []),
-                    "status": "cached"
-                }
+                method_note = "Training dataset provenance could not be verified."
                 
-            # Layman-friendly explanations
             explanations = [
-                "The AI model analyzes files using four main clues: file size, file type, file system type (partition), and entropy (a measure of file complexity/encryption).",
-                f"Training completed successfully! The model reached an accuracy of {metrics['accuracy'] * 100:.2f}%. This means it correctly predicts whether a file can be recovered in {metrics['accuracy'] * 100:.1f} out of 100 cases.",
-                "It learned that files with high entropy (complexity) above 7.1 are very likely encrypted or corrupted, making them harder to recover, while log files and registry entries are generally easy to recover."
+                "The AI model analyzes files using four features: file size, file type, file system type (partition), and byte entropy (a measure of file complexity/encryption).",
+                method_note,
+                "Re-train the model as real, labelled evidence accumulates so predictions become verified and production-ready.",
             ]
             
             return Response({
                 "success": True,
+                "status": "trained",
                 "message": "AI model training completed successfully.",
                 "metrics": metrics,
+                "provenance": {
+                    "data_source": provenance_out.get("data_source"),
+                    "total_rows": provenance_out.get("total_rows"),
+                    "real_rows": provenance_out.get("real_rows"),
+                    "synthetic_rows": provenance_out.get("synthetic_rows"),
+                    "training_method": training_method,
+                },
                 "explanations": explanations
             })
             

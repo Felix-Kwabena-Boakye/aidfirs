@@ -19,8 +19,8 @@ class Evidence:
     """
     
     STATUS_CHOICES = [
+        ('pending', 'Pending Acquisition'),
         ('collected', 'Collected'),
-        ('pending_hash', 'Pending Hash'),
         ('analyzing', 'Analyzing'),
         ('analyzed', 'Analyzed'),
         ('archived', 'Archived'),
@@ -40,7 +40,7 @@ class Evidence:
     
     def __init__(self, case_id, evidence_type, file_name, file_path,
                  file_size=0, hash_md5='', hash_sha1='', hash_sha256='',
-                 description='', collector_id='', status='collected',
+                 description='', collector_id='', status='pending',
                  collected_at=None, analyzed_at=None, tags=None, metadata=None, _id=None):
         self._id = _id
         self.case_id = case_id
@@ -119,10 +119,11 @@ class Evidence:
         """
         hashes = Evidence.compute_hashes(file_path) if file_path else {'md5': None, 'sha1': None, 'sha256': None}
 
-        # Status: if hashes are available the record is 'collected'; otherwise mark
-        # as 'pending_hash' so the pipeline knows to update hashes later.
+        # Status: 'collected' is only assigned when the evidence file has actually
+        # been acquired on disk and its content hashes computed. Otherwise the
+        # record stays 'pending' until the pipeline completes acquisition.
         hashes_available = bool(hashes.get('sha256'))
-        initial_status = "collected" if hashes_available else "pending_hash"
+        initial_status = "collected" if hashes_available else "pending"
 
         evidence_doc = {
             "case_id": case_id,
@@ -192,7 +193,7 @@ class Evidence:
     def update_hashes(evidence_id, file_path):
         """
         Compute and persist cryptographic hashes after a file has been fully
-        recovered/written to disk.  Updates status from 'pending_hash' to
+        recovered/written to disk.  Updates status from 'pending' to
         'collected' and stamps the hash fields.
 
         Returns a dict with keys: success, sha256, duplicate, existing_id.
@@ -493,7 +494,7 @@ class Evidence:
             hash_sha256=data.get('hash_sha256', ''),
             description=data.get('description', ''),
             collector_id=data.get('collector_id', ''),
-            status=data.get('status', 'collected'),
+            status=data.get('status', 'pending'),
             collected_at=collected_at,
             analyzed_at=analyzed_at,
             tags=data.get('tags', []),

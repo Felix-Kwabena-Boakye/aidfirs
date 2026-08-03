@@ -84,14 +84,15 @@ export default function Devices() {
       const newCaseId = caseResponse.data._id
 
       // 2. Add device as evidence to the new case
+      // Acquisition has not completed yet: do not claim status 'collected' or
+      // a file_size. The backend marks the record 'pending' until the image is
+      // actually written to disk and hashed.
       const evidenceData = {
         case_id: newCaseId,
         evidence_type: 'disk_image',
         file_name: `${deviceLabel}_Forensic_Image`,
         file_path: `storage/evidence/device_${device.drive_letter || 'drive'}_${device.serial_number || 'raw'}.raw`,
-        file_size: Math.round(device.size_gb * 1024 * 1024 * 1024),
-        description: `Source Device: ${device.model || deviceLabel}\nSerial: ${device.serial_number || 'Unknown'}\nDrive Letter: ${device.drive_letter || 'N/A'}`,
-        status: 'collected'
+        description: `Source Device: ${device.model || deviceLabel}\nSerial: ${device.serial_number || 'Unknown'}\nDrive Letter: ${device.drive_letter || 'N/A'}`
       }
 
       const evidenceResponse = await evidenceAPI.uploadEvidence(evidenceData)

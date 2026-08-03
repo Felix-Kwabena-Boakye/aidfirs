@@ -14,7 +14,7 @@ class ChainOfCustody:
     MongoDB-based Chain of Custody record with file-based fallback.
     """
     def __init__(self, case_id, evidence_id, action, performed_by, timestamp=None,
-                 hash_before='', hash_after='', notes='', ip_address=None, _id=None):
+                 hash_before='', hash_after='', hash_status=None, notes='', ip_address=None, _id=None):
         self._id = _id
         self.case_id = str(case_id)
         self.evidence_id = str(evidence_id) if evidence_id else None
@@ -23,15 +23,29 @@ class ChainOfCustody:
         self.timestamp = timestamp or datetime.now(timezone.utc)
         self.hash_before = hash_before or ''
         self.hash_after = hash_after or ''
+        self.hash_status = hash_status or ChainOfCustody.derive_hash_status(hash_before, hash_after)
         self.notes = notes or ''
         self.ip_address = ip_address or ''
 
     @staticmethod
+    def derive_hash_status(hash_before, hash_after):
+        """Derive an explicit status for a CoC record's hash fields."""
+        before = hash_before or ''
+        after = hash_after or ''
+        if before and after:
+            return "verified" if before == after else "modified"
+        if before or after:
+            return "hash recorded"
+        return "hash unavailable"
+
+    @staticmethod
     def create(case_id, evidence_id, action, performed_by, notes='', hash_before='', hash_after='',
-               ip_address=None):
+               hash_status=None, ip_address=None):
         """
         Create a new Chain of Custody entry.
         """
+        if hash_status is None:
+            hash_status = ChainOfCustody.derive_hash_status(hash_before, hash_after)
         coc_doc = {
             "case_id": str(case_id),
             "evidence_id": str(evidence_id) if evidence_id else None,
@@ -40,6 +54,7 @@ class ChainOfCustody:
             "timestamp": datetime.now(timezone.utc),
             "hash_before": hash_before or '',
             "hash_after": hash_after or '',
+            "hash_status": hash_status,
             "notes": notes or '',
             "ip_address": ip_address or '',
         }
@@ -126,6 +141,7 @@ class ChainOfCustody:
             timestamp=timestamp,
             hash_before=data.get('hash_before'),
             hash_after=data.get('hash_after'),
+            hash_status=data.get('hash_status'),
             notes=data.get('notes'),
             ip_address=data.get('ip_address'),
         )
@@ -141,6 +157,7 @@ class ChainOfCustody:
             "timestamp": self.timestamp.isoformat() if isinstance(self.timestamp, datetime) else self.timestamp,
             "hash_before": self.hash_before,
             "hash_after": self.hash_after,
+            "hash_status": self.hash_status,
             "notes": self.notes,
             "ip_address": self.ip_address,
         }

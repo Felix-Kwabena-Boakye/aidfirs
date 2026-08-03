@@ -919,7 +919,7 @@ export default function Evidence() {
                         <td className="px-4 py-3 whitespace-nowrap">{formatFileSize(file.file_size)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            (file.recovery_confidence || '').includes('High')
+                            ['Recovered and Validated', 'Footer Verified'].some(v => (file.recovery_confidence || '').includes(v))
                               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                               : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                           }`}>

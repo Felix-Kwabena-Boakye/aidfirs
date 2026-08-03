@@ -19,7 +19,7 @@ class EvidencePydantic(BaseModel):
     hash_sha256: Optional[str] = None
     description: str = ''
     collector_id: Optional[str] = None
-    status: Literal['collected', 'pending_hash', 'analyzing', 'analyzed', 'archived', 'duplicate'] = 'collected'
+    status: Literal['pending', 'collected', 'analyzing', 'analyzed', 'archived', 'duplicate'] = 'pending'
     collected_at: Optional[datetime] = None
     analyzed_at: Optional[datetime] = None
     tags: List[str] = []
@@ -40,8 +40,8 @@ class EvidenceSerializer(serializers.Serializer):
     description = serializers.CharField(default='')
     collector_id = serializers.CharField(required=False)
     status = serializers.ChoiceField(
-        choices=['collected', 'pending_hash', 'analyzing', 'analyzed', 'archived', 'duplicate'],
-        default='collected'
+        choices=['pending', 'collected', 'analyzing', 'analyzed', 'archived', 'duplicate'],
+        default='pending'
     )
     collected_at = serializers.DateTimeField(read_only=True)
     analyzed_at = serializers.DateTimeField(read_only=True, allow_null=True)

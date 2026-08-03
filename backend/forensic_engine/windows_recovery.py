@@ -124,7 +124,7 @@ def scan_recycle_bin(drive_path: str) -> List[Dict]:
                             'is_video': is_video,
                             'is_image': is_image,
                             'is_document': is_doc,
-                            'recovery_confidence': 'very_high',
+                            'recovery_confidence': 'Recycle Bin Match (content present)',
                             'recoverable': True,
                             'md5': _hash_file(entry.path) if entry.is_file() and size < 500 * 1024 * 1024 else None,
                         })
@@ -204,7 +204,7 @@ def scan_drive_signatures(drive_path: str, file_types: Optional[List[str]] = Non
                                 'description': desc,
                                 'offset': abs_offset,
                                 'header_signature': sig.hex(),
-                                'recovery_confidence': 'high',
+                                'recovery_confidence': 'Unverified Carving Candidate',
                                 'recoverable': True,
                             })
                             pos += len(sig)

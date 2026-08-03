@@ -229,7 +229,7 @@ class FileCarver:
                                     'estimated_size': file_size_found,
                                     'header_signature': header.hex(),
                                     'footer_found': footer is not None,
-                                    'recovery_confidence': 'high' if footer else 'medium',
+                                    'recovery_confidence': 'Footer Verified' if footer else 'Signature Match',
                                     'timestamp': datetime.now(timezone.utc).isoformat()
                                 }
 

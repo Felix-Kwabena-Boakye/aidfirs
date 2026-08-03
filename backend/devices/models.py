@@ -21,7 +21,7 @@ class Device:
                  # Extended forensic fields
                  vendor=None, manufacturer=None, bus_type=None, device_path=None,
                  volume_label=None, mount_point=None, capacity_bytes=None,
-                 hash_sha256=None, hash_md5=None, drive_type=None,
+                 device_fingerprint=None, identity_digest=None, drive_type=None,
                  _id=None):
         self._id = _id
         self.device_name = device_name
@@ -41,14 +41,16 @@ class Device:
         self.mount_point = mount_point or drive_letter or ''
         self.capacity_bytes = int(capacity_bytes) if capacity_bytes else int(self.size_gb * 1024 ** 3)
         self.drive_type = drive_type or 'USB Drive'
-        # Compute fingerprints if not provided
-        if serial_number and (not hash_sha256 or not hash_md5):
+        # Identity fingerprints derived deterministically from serial:model.
+        # These are NOT evidence content hashes — they identify the device and
+        # must never be presented as SHA-256/MD5 hashes of an acquired image.
+        if serial_number and (not device_fingerprint or not identity_digest):
             fingerprint_src = f"{serial_number}:{model}".encode('utf-8')
-            self.hash_sha256 = hash_sha256 or hashlib.sha256(fingerprint_src).hexdigest()
-            self.hash_md5 = hash_md5 or hashlib.md5(fingerprint_src).hexdigest()
+            self.device_fingerprint = device_fingerprint or hashlib.sha256(fingerprint_src).hexdigest()
+            self.identity_digest = identity_digest or hashlib.md5(fingerprint_src).hexdigest()
         else:
-            self.hash_sha256 = hash_sha256 or ''
-            self.hash_md5 = hash_md5 or ''
+            self.device_fingerprint = device_fingerprint or ''
+            self.identity_digest = identity_digest or ''
 
     @staticmethod
     def get_collection():
@@ -68,10 +70,10 @@ class Device:
             except:
                 connected_at = datetime.now(timezone.utc)
 
-        # Compute fingerprints
+        # Compute identity fingerprints (deterministic serial:model digest — NOT content hashes)
         fingerprint_src = f"{serial_number}:{model}".encode('utf-8')
-        hash_sha256 = kwargs.get('hash_sha256') or hashlib.sha256(fingerprint_src).hexdigest()
-        hash_md5 = kwargs.get('hash_md5') or hashlib.md5(fingerprint_src).hexdigest()
+        device_fingerprint = kwargs.get('device_fingerprint') or hashlib.sha256(fingerprint_src).hexdigest()
+        identity_digest = kwargs.get('identity_digest') or hashlib.md5(fingerprint_src).hexdigest()
 
         doc = {
             "device_name": device_name,
@@ -91,8 +93,8 @@ class Device:
             "mount_point": kwargs.get('mount_point', drive_letter or ''),
             "capacity_bytes": int(kwargs.get('capacity_bytes', int((float(size_gb) if size_gb else 0) * 1024 ** 3))),
             "drive_type": kwargs.get('drive_type', 'USB Drive'),
-            "hash_sha256": hash_sha256,
-            "hash_md5": hash_md5,
+            "device_fingerprint": device_fingerprint,
+            "identity_digest": identity_digest,
         }
 
         if col is not None:
@@ -233,8 +235,8 @@ class Device:
             mount_point=data.get('mount_point', ''),
             capacity_bytes=data.get('capacity_bytes', 0),
             drive_type=data.get('drive_type', 'USB Drive'),
-            hash_sha256=data.get('hash_sha256', ''),
-            hash_md5=data.get('hash_md5', ''),
+            device_fingerprint=data.get('device_fingerprint', data.get('hash_sha256', '')),
+            identity_digest=data.get('identity_digest', data.get('hash_md5', '')),
         )
 
     def to_dict(self):
@@ -258,8 +260,8 @@ class Device:
             "is_external": True,
             "filesystem": self.filesystem,
             "model": self.model,
-            "hash_sha256": self.hash_sha256,
-            "hash_md5": self.hash_md5,
+            "device_fingerprint": self.device_fingerprint,
+            "identity_digest": self.identity_digest,
             "connected_at": self.connected_at.isoformat() if self.connected_at else None,
             "source": self.source,
         }

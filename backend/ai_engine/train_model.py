@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import pickle
 import pandas as pd
 from datetime import datetime, timezone
@@ -16,13 +17,43 @@ from mongo_connection import get_ai_models_collection, MONGO_AVAILABLE
 # Compute backend root so the CSV path is always absolute and correct.
 _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def train_and_save_model(csv_path=None):
+def _load_provenance(csv_path, provenance=None):
+    """
+    Resolve dataset provenance from the caller or the sidecar provenance file.
+    Raises when provenance cannot be determined so unlabeled datasets are never trained on.
+    """
+    if provenance:
+        return provenance
+    sidecar = f"{csv_path}.provenance.json"
+    if os.path.exists(sidecar):
+        try:
+            with open(sidecar, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    raise ValueError(
+        "Dataset provenance is unknown. Refusing to train on unlabeled data. "
+        "Run export_dataset() first so provenance is recorded."
+    )
+
+def train_and_save_model(csv_path=None, provenance=None):
     if csv_path is None:
         csv_path = os.path.join(_BACKEND_ROOT, "forensics_training_data.csv")
     print(f"Loading dataset from {csv_path}...")
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Dataset CSV not found at {csv_path}. Please run export_pipeline.py first.")
         
+    prov = _load_provenance(csv_path, provenance)
+
+    # Synthetic-only datasets must never be used to train a served model.
+    if prov.get("data_source") == "synthetic":
+        print("[REFUSED] Training refused: synthetic-only dataset.")
+        return {
+            "status": "refused",
+            "reason": "Synthetic-only dataset",
+            "provenance": prov,
+        }
+
     df = pd.read_csv(csv_path)
     
     # Mappings for categorical variables
@@ -71,7 +102,16 @@ def train_and_save_model(csv_path=None):
     # Serialize model
     serialized_model = pickle.dumps(model)
     
-    # Prepare database document
+    # Training method derived from dataset provenance
+    if prov.get("data_source") == "real":
+        training_method = "real"
+    elif prov.get("data_source") == "mixed":
+        training_method = "real_with_synthetic_supplement"
+    else:
+        training_method = "unknown"
+    
+    # Prepare database document — includes full dataset provenance so served
+    # predictions can always be traced back to the data they were trained on.
     model_doc = {
         "model_name": "random_forest_recoverability",
         "trained_at": datetime.now(timezone.utc),
@@ -85,7 +125,11 @@ def train_and_save_model(csv_path=None):
             "partition": partition_map
         },
         "model_bytes": Binary(serialized_model),
-        "status": "active"
+        "status": "active",
+        "data_source": prov.get("data_source"),
+        "real_rows": int(prov.get("real_rows", 0)),
+        "synthetic_rows": int(prov.get("synthetic_rows", 0)),
+        "training_method": training_method,
     }
     
     # Save to MongoDB
@@ -107,6 +151,25 @@ def train_and_save_model(csv_path=None):
     else:
         print("MongoDB is not available. Saving trained model locally...")
         save_model_locally(model_doc)
+    
+    return {
+        "status": "trained",
+        "metrics": {
+            "accuracy": round(float(accuracy), 4),
+            "precision": round(float(precision), 4),
+            "recall": round(float(recall), 4),
+            "f1": round(float(f1), 4),
+            "trained_at": model_doc["trained_at"].isoformat(),
+            "features": model_doc["features"],
+        },
+        "provenance": {
+            "data_source": model_doc["data_source"],
+            "total_rows": int(prov.get("total_rows", len(df))),
+            "real_rows": int(prov.get("real_rows", 0)),
+            "synthetic_rows": int(prov.get("synthetic_rows", 0)),
+            "training_method": training_method,
+        },
+    }
 
 def save_model_locally(model_doc):
     """
