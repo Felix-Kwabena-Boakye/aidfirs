@@ -3,12 +3,14 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from accounts.permissions import IsAdmin, IsInvestigator
 
+import re
 from rest_framework.decorators import action
 from .models import AnalysisResult
 from .serializers import AnalysisResultSerializer
 from backend.authentication import JWTAuthentication
 from .assistant import ForensicAIAssistant
 from ai_engine.system_agent import SystemAgent
+from cases.models import Case
 
 
 class AnalysisResultViewSet(viewsets.ViewSet):
@@ -175,20 +177,42 @@ class AnalysisResultViewSet(viewsets.ViewSet):
         Provide AI-powered suggestions for evidence file name and description.
         Expects: case_context in request.data
         """
-        case_context = request.data.get('case_context', '')
-        
-        # Simple simulation of AI suggestions
-        # In a real app, this would call an LLM (Claude, etc.)
-        if "Forensic Examination" in case_context:
-            file_name = "Physical_Disk_Image_001.E01"
-            description = f"High-integrity forensic acquisition for: {case_context.split(',')[0]}"
-        elif "Mobile" in case_context.lower():
-            file_name = "Mobile_Acquisition_Report.tar"
-            description = "Logical extraction of mobile device data and application artifacts."
+        case_context = (request.data.get('case_context', '') or '').strip()
+
+        # Resolve the real case record so suggestions are derived from actual
+        # case data, not canned strings.
+        case = None
+        if case_context:
+            case = Case.get_by_id(case_context)
+            if case is None:
+                case = Case.get_by_id(case_context.replace('-', ''))
+            if case is None:
+                for candidate in Case.get_all():
+                    if (case_context.lower() in (candidate.title or '').lower()
+                            or case_context.lower() in (candidate.case_number or '').lower()):
+                        case = candidate
+                        break
+
+        if case is not None:
+            title = (case.title or '').strip()
+            desc = (case.description or '').strip()
+            device_name = title.replace("Forensic Examination:", "").strip()
+            if not device_name:
+                device_name = "Digital_Evidence"
+            safe_name = re.sub(r'[^\w\-\. ]+', '', device_name).strip().replace(' ', '_')
+            file_name = f"{safe_name}_Forensic_Image.E01"
+            description = (desc[:500] if desc else
+                           f"Forensic acquisition of {device_name} for case {case.case_number}.")
+        elif case_context:
+            safe_name = re.sub(r'[^\w\-\. ]+', '', case_context).strip().replace(' ', '_')[:120]
+            file_name = f"{safe_name}_Forensic_Image.E01"
+            description = f"Forensic acquisition of the digital evidence source for: {case_context}"
         else:
-            file_name = "Digital_Evidence_Source.E01"
-            description = "Forensic acquisition of the digital evidence source for the current case."
-            
+            return Response(
+                {'error': 'No case context provided to generate suggestions'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         return Response({
             "fileName": file_name,
             "description": description
