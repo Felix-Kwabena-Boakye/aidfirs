@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import pytest
+import tempfile
 from django.http import StreamingHttpResponse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -10,6 +11,7 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 django.setup()
 
+from django.conf import settings
 from evidence.views import EvidenceViewSet
 from evidence.models import Evidence
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -69,39 +71,41 @@ def test_recover_and_analyze_streaming():
                  patch('cases.coc_models.TimelineEvent.create', return_value=None), \
                  patch('evidence.views.EvidenceViewSet._get_real_file_metadata', return_value={'created_date': '2026-06-24', 'modified_date': '2026-06-24'}), \
                  patch('mongo_connection.MONGO_AVAILABLE', False):
-                
-                response = view.recover_and_analyze(request, pk="test_evidence_id")
-                
-                # Assertions
-                assert response is not None
-                assert isinstance(response, StreamingHttpResponse)
-                assert response.status_code == 200
-                assert response['Content-Type'] == 'text/event-stream'
-                
-                # Consume stream
-                content = b"".join(response.streaming_content).decode('utf-8')
-                print("RAW CONTENT:", content)
-                lines = content.strip().split('\n\n')
-                
-                # Verify we get the expected SSE events
-                assert len(lines) > 0
-                events = []
-                for line in lines:
-                    if line.strip().startswith('data: '):
-                        data_str = line.strip()[6:]
-                        events.append(json.loads(data_str))
-                
-                print("PARSED EVENTS:", events)
-                
-                # Assert at least one processing and one completed event
-                assert any(e['status'] == 'processing' for e in events), "No processing events found!"
-                assert any(e['status'] == 'completed' for e in events), "No completed event found!"
-                
-                # Check completed event content
-                completed_event = next(e for e in events if e['status'] == 'completed')
-                assert completed_event['recovered_files'] is not None
-                assert len(completed_event['recovered_files']) > 0
-                assert completed_event['recovered_files'][0]['file_name'] == "test_device.img"
+                with tempfile.TemporaryDirectory() as tmpdir, \
+                     patch.object(settings, 'BASE_DIR', tmpdir):
+
+                    response = view.recover_and_analyze(request, pk="test_evidence_id")
+
+                    # Assertions
+                    assert response is not None
+                    assert isinstance(response, StreamingHttpResponse)
+                    assert response.status_code == 200
+                    assert response['Content-Type'] == 'text/event-stream'
+
+                    # Consume stream
+                    content = b"".join(response.streaming_content).decode('utf-8')
+                    print("RAW CONTENT:", content)
+                    lines = content.strip().split('\n\n')
+
+                    # Verify we get the expected SSE events
+                    assert len(lines) > 0
+                    events = []
+                    for line in lines:
+                        if line.strip().startswith('data: '):
+                            data_str = line.strip()[6:]
+                            events.append(json.loads(data_str))
+
+                    print("PARSED EVENTS:", events)
+
+                    # Assert at least one processing and one completed event
+                    assert any(e['status'] == 'processing' for e in events), "No processing events found!"
+                    assert any(e['status'] == 'completed' for e in events), "No completed event found!"
+
+                    # Check completed event content
+                    completed_event = next(e for e in events if e['status'] == 'completed')
+                    assert completed_event['recovered_files'] is not None
+                    assert len(completed_event['recovered_files']) > 0
+                    assert completed_event['recovered_files'][0]['file_name'] == "test_device.img"
 
 
 def test_restore_files():
