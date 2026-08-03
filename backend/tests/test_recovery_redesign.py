@@ -101,11 +101,10 @@ def test_recover_and_analyze_streaming():
                     assert any(e['status'] == 'processing' for e in events), "No processing events found!"
                     assert any(e['status'] == 'completed' for e in events), "No completed event found!"
 
-                    # Check completed event content
+                    # Check completed event content (no fabricated recovery fallback)
                     completed_event = next(e for e in events if e['status'] == 'completed')
-                    assert completed_event['recovered_files'] is not None
-                    assert len(completed_event['recovered_files']) > 0
-                    assert completed_event['recovered_files'][0]['file_name'] == "test_device.img"
+                    assert completed_event['recovered_files'] == []
+                    assert completed_event['ai_analysis'] is not None
 
 
 def test_restore_files():

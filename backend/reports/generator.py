@@ -24,6 +24,17 @@ def _format_bytes(size):
     return f"{size:.2f} {units[i]}"
 
 
+def _hash_coverage_statement(files):
+    """Honest statement about registered file hash coverage."""
+    total = len(files)
+    hashed = sum(1 for f in files if getattr(f, "hash_sha256", None))
+    if total == 0:
+        return "No recovered files are registered in this case."
+    if hashed == total:
+        return f"All {total} registered recovered file(s) include SHA-256 hashes."
+    return f"SHA-256 hashes are recorded for {hashed} of {total} registered recovered file(s)."
+
+
 def generate_html_report(case, files, timeline, coc_entries, examiner, report_type='full'):
     """Generate a complete HTML forensic report."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -137,9 +148,8 @@ def generate_html_report(case, files, timeline, coc_entries, examiner, report_ty
       <p>This forensic investigation report was prepared by <strong>{examiner}</strong> in connection with Case <strong>{case_number}: {case_title}</strong>.
       The investigation utilized the AIDFIRS (AI-Powered Digital Forensic Investigation and Recovery System) platform to conduct a comprehensive digital forensic analysis.</p>
       <br>
-      <p>A total of <strong>{len(files)} files</strong> were recovered ({_format_bytes(total_size)}), spanning {len(set(f.file_extension for f in files if f.file_extension))} unique file types.
-      All recovered artifacts have been cryptographically hashed to ensure evidentiary integrity. The timeline recorded
-      <strong>{len(timeline)} forensic events</strong> with full chain-of-custody documentation.</p>
+      <p>A total of <strong>{len(files)} file(s)</strong> are registered as recovered ({_format_bytes(total_size)}), spanning {len(set(f.file_extension for f in files if f.file_extension))} unique file type(s).
+      {_hash_coverage_statement(files)} The timeline contains <strong>{len(timeline)} forensic event(s)</strong> and <strong>{len(coc_entries)} chain-of-custody record(s)</strong>.</p>
       <br>
       <p>Case Status: <strong>{case_status.upper()}</strong> &nbsp;|&nbsp; Priority: <strong>{case_priority.upper()}</strong> &nbsp;|&nbsp; Opened: <strong>{case_created}</strong></p>
     </div>
@@ -284,8 +294,8 @@ def generate_pdf_report(case, files, timeline, coc_entries, examiner, report_id)
     total_size = sum(f.size for f in files if f.size)
     story.append(Paragraph(
         f"This forensic report was prepared by <b>{examiner}</b> for Case <b>{case_number}</b>. "
-        f"A total of <b>{len(files)} files</b> ({_format_bytes(total_size)}) were recovered and analyzed. "
-        f"The forensic timeline recorded <b>{len(timeline)} events</b> with complete chain-of-custody documentation.",
+        f"A total of <b>{len(files)} file(s)</b> ({_format_bytes(total_size)}) are registered as recovered. "
+        f"{_hash_coverage_statement(files)} The timeline contains <b>{len(timeline)} event(s)</b> and <b>{len(coc_entries)} chain-of-custody record(s)</b>.",
         body_style))
     story.append(Spacer(1, 0.2*inch))
 
@@ -379,9 +389,9 @@ def generate_pdf_report(case, files, timeline, coc_entries, examiner, report_id)
     # Conclusion
     story.append(Paragraph("Conclusion", heading_style))
     story.append(Paragraph(
-        f"This investigation was conducted using AIDFIRS with full digital forensic integrity. "
-        f"All evidence has been cryptographically hashed and chain-of-custody documented. "
-        f"The findings of this report are prepared for {case_number} and are ready for review by authorized personnel.",
+        f"This report summarizes the registered evidence for Case <b>{case_number}</b>. "
+        f"{_hash_coverage_statement(files)} Chain-of-custody records registered: {len(coc_entries)}. "
+        f"The report is ready for review by authorized personnel.",
         body_style))
     story.append(Spacer(1, 0.5*inch))
     story.append(Paragraph(f"Examiner Signature: _______________________ &nbsp;&nbsp; Date: {now}", body_style))
@@ -416,8 +426,8 @@ def generate_docx_report(case, files, timeline, coc_entries, examiner, report_id
     doc.add_heading("Executive Summary", 1)
     doc.add_paragraph(
         f"This forensic report was prepared by {examiner} for Case {case_number}: {getattr(case, 'title', 'N/A')}. "
-        f"A total of {len(files)} files ({_format_bytes(total_size)}) were recovered. "
-        f"The forensic timeline recorded {len(timeline)} events with complete chain-of-custody documentation."
+        f"A total of {len(files)} file(s) ({_format_bytes(total_size)}) are registered as recovered. "
+        f"{_hash_coverage_statement(files)} The timeline contains {len(timeline)} event(s) and {len(coc_entries)} chain-of-custody record(s)."
     )
 
     # Case Info
@@ -489,9 +499,9 @@ def generate_docx_report(case, files, timeline, coc_entries, examiner, report_id
     # Conclusion
     doc.add_heading("Conclusion", 1)
     doc.add_paragraph(
-        f"This investigation was conducted using AIDFIRS with full digital forensic integrity. "
-        f"All evidence has been cryptographically hashed and chain-of-custody documented. "
-        f"This report is prepared for Case {case_number} and is ready for authorized review."
+        f"This report summarizes the registered evidence for Case {case_number}. "
+        f"{_hash_coverage_statement(files)} Chain-of-custody records registered: {len(coc_entries)}. "
+        f"The report is ready for authorized review."
     )
     doc.add_paragraph("")
     doc.add_paragraph(f"Examiner Signature: _______________________ | Date: {now}")

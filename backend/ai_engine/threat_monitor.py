@@ -38,9 +38,17 @@ class ThreatMonitor:
                     })
                     overall_risk = "High" if "Regional" in data["label"] else "Medium"
 
+        risk_score = 0
+        for threat in threats_found:
+            if "Regional" in threat.get("label", ""):
+                risk_score += 15
+            else:
+                risk_score += 10
+        risk_score = min(risk_score, 100)
+
         return {
             "threats": threats_found,
-            "overall_risk_score": 85 if threats_found else 5,
-            "status": "Threat Defused" if not threats_found else "Monitoring Pattern",
+            "overall_risk_score": risk_score,
+            "status": "No threats identified" if not threats_found else "Threat patterns identified",
             "message": "Patterns around sensitive geopolitical nodes identified." if threats_found else "No immediate global threats found."
         }

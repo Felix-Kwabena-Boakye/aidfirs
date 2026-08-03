@@ -147,7 +147,9 @@ export default function Evidence() {
         [id]: response.data
       }));
       if (response.data.status.includes('Verified')) {
-        toast.success(`Integrity verified successfully for evidence file!`);
+        toast.success(`Integrity verified for evidence file.`);
+      } else if (response.data.status.startsWith('Not verifiable')) {
+        toast.warning(`Integrity check not possible: ${response.data.status}`);
       } else {
         toast.error(`Warning: Evidence file integrity mismatch detected!`);
       }
@@ -171,14 +173,14 @@ export default function Evidence() {
       currentStep: 'connection',
       steps: {
         connection: { status: 'pending', label: 'Device Connected' },
-        scan: { status: 'idle', label: 'Device Scan Completed' },
-        deleted_detection: { status: 'idle', label: 'Deleted Files Detected' },
-        metadata_extraction: { status: 'idle', label: 'Metadata Extraction Completed' },
+        scan: { status: 'idle', label: 'Device Scan' },
+        deleted_detection: { status: 'idle', label: 'Scanning Deleted Files' },
+        metadata_extraction: { status: 'idle', label: 'Metadata Extraction' },
         recovery_engine: { status: 'idle', label: 'Recovery Engine Running' },
-        filesystem_analysis: { status: 'idle', label: 'Filesystem Analysis Completed' },
-        timeline_reconstruction: { status: 'idle', label: 'Timeline Reconstruction Completed' },
-        ai_investigation: { status: 'idle', label: 'AI Investigation Completed' },
-        report_generation: { status: 'idle', label: 'Report Generated' }
+        filesystem_analysis: { status: 'idle', label: 'Filesystem Analysis' },
+        timeline_reconstruction: { status: 'idle', label: 'Timeline Reconstruction' },
+        ai_investigation: { status: 'idle', label: 'AI Investigation' },
+        report_generation: { status: 'idle', label: 'Report Generation' }
       }
     });
     setError(null);
@@ -757,7 +759,8 @@ export default function Evidence() {
                       <div className="flex justify-between items-center gap-2 mt-1">
                         {integrityResults[item._id] ? (
                           <span className={`text-[10px] font-mono font-bold flex items-center gap-1 ${
-                            integrityResults[item._id].status.includes('Verified') ? 'text-green-400' : 'text-red-400'
+                            integrityResults[item._id].status.includes('Verified') ? 'text-green-400' :
+                            integrityResults[item._id].status.startsWith('Not verifiable') ? 'text-yellow-400' : 'text-red-400'
                           }`}>
                             <Shield size={10} />
                             <span>{integrityResults[item._id].status}</span>
@@ -916,11 +919,11 @@ export default function Evidence() {
                         <td className="px-4 py-3 whitespace-nowrap">{formatFileSize(file.file_size)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            file.recovery_confidence.includes('High') 
+                            (file.recovery_confidence || '').includes('High')
                               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                               : 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                           }`}>
-                            {file.recovery_confidence}
+                            {file.recovery_confidence || 'Unverified'}
                           </span>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-center">

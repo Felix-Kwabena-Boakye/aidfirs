@@ -116,6 +116,7 @@ class EvidenceViewSet(viewsets.ViewSet):
                     action=action_label,
                     performed_by=username,
                     notes=f"Evidence file '{evidence.file_name}' {'flagged as duplicate.' if is_duplicate else 'uploaded.'}",
+                    hash_before='',
                     hash_after=evidence.hash_sha256
                 )
                 if not is_duplicate:
@@ -956,7 +957,7 @@ class EvidenceViewSet(viewsets.ViewSet):
                 os.makedirs(safe_recoveries_dir, exist_ok=True)
 
                 # --- 1. Verify Device & Resolve Absolute Server Evidence Path ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'connection', 'message': '✓ Device Connected & Evidence Resolved'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'connection', 'message': 'Checking evidence file availability'})}\n\n"
                 
                 try:
                     device_target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
@@ -967,48 +968,60 @@ class EvidenceViewSet(viewsets.ViewSet):
                 if not os.path.exists(device_target_path):
                     yield f"data: {json.dumps({'status': 'failed', 'error': 'Evidence file not found.', 'code': 'EVIDENCE_NOT_FOUND', 'details': f'Resolved path {device_target_path} does not exist.'})}\n\n"
                     return
-                
+
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'connection', 'message': 'Evidence file resolved'})}\n\n"
+
                 time.sleep(0.3)
 
                 # --- 2. Scan HDD/USB Drive ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'scan', 'message': '✓ Device Scan Completed'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'scan', 'message': 'Scanning device partitions'})}\n\n"
                 part_res = get_partitions(device_target_path)
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'scan', 'message': 'Device scan finished'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 3. Identify Deleted Files ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'deleted_detection', 'message': '✓ Deleted Files Detected'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'deleted_detection', 'message': 'Scanning for deleted files'})}\n\n"
                 recycle_entries = scan_recycle_bin(device_target_path)
                 restored_files = recover_files_from_recycle_bin(recycle_entries, safe_recoveries_dir)
+                if restored_files:
+                    yield f"data: {json.dumps({'status': 'processing', 'step': 'deleted_detection', 'message': f'{len(restored_files)} deleted file(s) restored from recycle metadata'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'processing', 'step': 'deleted_detection', 'message': 'No deleted files found in recycle metadata'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 4. Metadata Extraction ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'metadata_extraction', 'message': '✓ Metadata Extraction Completed'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'metadata_extraction', 'message': 'Extracting metadata from recovered files'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 5. Recovery Engine ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'recovery_engine', 'message': '✓ Recovery Engine Running'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'recovery_engine', 'message': 'Running recovery engine (file carving)'})}\n\n"
                 carver = FileCarver()
                 carved_metadata = carver.carve_disk_image(device_target_path)
                 carved_files = carver.extract_carved_bytes(device_target_path, carved_metadata, safe_recoveries_dir)
                 time.sleep(0.3)
 
                 # --- 6. Filesystem Analysis ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'filesystem_analysis', 'message': '✓ Filesystem Analysis Completed'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'filesystem_analysis', 'message': 'Running filesystem analysis'})}\n\n"
                 analyzer = DiskImageAnalyzer()
                 meta_results = analyzer.full_analysis(device_target_path, filesystem_type='ntfs')
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'filesystem_analysis', 'message': 'Filesystem analysis finished'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 7. Timeline Reconstruction ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'timeline_reconstruction', 'message': '✓ Timeline Reconstruction Completed'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'timeline_reconstruction', 'message': 'Reconstructing timeline from filesystem metadata'})}\n\n"
                 timeline_res = get_timeline(device_target_path)
+                if isinstance(timeline_res, dict) and timeline_res.get('success') and timeline_res.get('timeline'):
+                    yield f"data: {json.dumps({'status': 'processing', 'step': 'timeline_reconstruction', 'message': 'Timeline reconstructed from filesystem metadata'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'processing', 'step': 'timeline_reconstruction', 'message': 'Timeline reconstruction produced no events for this image'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 8. AI Investigation ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'ai_investigation', 'message': '✓ AI Investigation Completed'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'ai_investigation', 'message': 'AI investigation started'})}\n\n"
                 time.sleep(0.3)
 
                 # --- 9. Report Generation ---
-                yield f"data: {json.dumps({'status': 'processing', 'step': 'report_generation', 'message': '✓ Report Generated'})}\n\n"
+                yield f"data: {json.dumps({'status': 'processing', 'step': 'report_generation', 'message': 'Report generation started'})}\n\n"
 
                 # Process recovered files lists and calculate checksums
                 recovered_list = []
@@ -1035,7 +1048,7 @@ class EvidenceViewSet(viewsets.ViewSet):
                             "file_size": rf.get('size', 0),
                             "creation_date": meta.get('created_date'),
                             "last_modified_date": meta.get('modified_date'),
-                            "recovery_confidence": "High (100%)",
+                            "recovery_confidence": "Restored",
                             "hash_sha256": sha256_hash,
                             "hash_sha512": sha512_hash,
                             "metadata": meta
@@ -1065,7 +1078,7 @@ class EvidenceViewSet(viewsets.ViewSet):
                             "file_size": cf.get('size', 0),
                             "creation_date": meta.get('created_date'),
                             "last_modified_date": meta.get('modified_date'),
-                            "recovery_confidence": "Medium (85%)",
+                            "recovery_confidence": "Carved",
                             "hash_sha256": sha256_hash,
                             "hash_sha512": sha512_hash,
                             "metadata": meta
@@ -1073,28 +1086,9 @@ class EvidenceViewSet(viewsets.ViewSet):
                         recovered_list.append(rec_file)
                         idx += 1
 
-                # Empty check fallback
+                # Empty check: never fabricate recovered files when none were recovered.
                 if not recovered_list:
-                    path = device_target_path
-                    if path and os.path.exists(path):
-                        sha256_hash, sha512_hash = EvidenceViewSet.safe_hash_device_or_file(path)
-                        meta = self._get_real_file_metadata(path)
-                        
-                        rec_file = {
-                            "id": f"ev_{evidence._id}_0",
-                            "file_name": evidence.file_name,
-                            "file_type": os.path.splitext(evidence.file_name)[1] or 'unknown',
-                            "original_location": evidence.file_path,
-                            "status": "recovered",
-                            "file_size": evidence.file_size,
-                            "creation_date": meta.get('created_date'),
-                            "last_modified_date": meta.get('modified_date'),
-                            "recovery_confidence": "High (100%)",
-                            "hash_sha256": sha256_hash,
-                            "hash_sha512": sha512_hash,
-                            "metadata": meta
-                        }
-                        recovered_list.append(rec_file)
+                    recovered_list = []
 
                 # Store findings in MongoDB
                 if MONGO_AVAILABLE:
@@ -1140,10 +1134,11 @@ class EvidenceViewSet(viewsets.ViewSet):
 
                 # Chain of Custody Auditing
                 coc_actions = [
-                    ("Device Scan", f"Device scan completed on {evidence.file_name}."),
-                    ("Metadata Extraction", f"Real ExifTool metadata extracted from {len(recovered_list)} files."),
-                    ("Recovery", f"Forensic recovery engine restored {len(recovered_list)} files in recoveries workspace."),
-                    ("Report Generation", f"Forensic investigation report and AI analysis generated by FIE-LLM.")
+                    ("Device Scan", f"Device scan executed on evidence '{evidence.file_name}'."),
+                    ("Metadata Extraction", f"Metadata extraction executed; metadata recorded for {len(recovered_list)} recovered file(s)."),
+                    ("Recovery", (f"Recovery engine returned {len(recovered_list)} recovered file(s); hashes computed during recovery."
+                                  if recovered_list else "Recovery engine returned no recoverable deleted files.")),
+                    ("Report Generation", f"Forensic report generation executed; AI analysis success: {bool(ai_res.get('success'))}.")
                 ]
                 
                 for act_name, act_notes in coc_actions:
@@ -1152,13 +1147,15 @@ class EvidenceViewSet(viewsets.ViewSet):
                         evidence_id=str(evidence._id),
                         action=act_name,
                         performed_by=username,
-                        notes=act_notes
+                        notes=act_notes,
+                        hash_before=evidence.hash_sha256,
+                        hash_after=evidence.hash_sha256
                     )
 
                 TimelineEvent.create(
                     case_id=evidence.case_id,
                     event_type="Recovery events",
-                    description=f"Unified forensic recovery and report generation completed by {username}.",
+                    description=f"Forensic recovery and analysis pipeline executed on '{evidence.file_name}' by {username}; {len(recovered_list)} file(s) recovered.",
                     severity="info"
                 )
 
@@ -1410,7 +1407,9 @@ class EvidenceViewSet(viewsets.ViewSet):
         sha256 = hashlib.sha256()
         sha512 = hashlib.sha512()
         
-        status_str = "✓ Verified"
+        status_str = "Not verifiable (file missing)"
+        current_sha256 = None
+        current_sha512 = None
         
         # If file exists, compute real hashes
         if evidence.file_path and os.path.exists(evidence.file_path):
@@ -1424,12 +1423,17 @@ class EvidenceViewSet(viewsets.ViewSet):
                 
                 if evidence.hash_sha256 and current_sha256 != evidence.hash_sha256:
                     status_str = "✗ Modified"
+                elif evidence.hash_sha256 and current_sha256 == evidence.hash_sha256:
+                    status_str = "✓ Verified"
+                else:
+                    status_str = "Hash computed (no stored hash to compare)"
             except Exception:
-                current_sha256 = evidence.hash_sha256 or "computed_sha256_fallback"
-                current_sha512 = hashlib.sha512(current_sha256.encode()).hexdigest()
+                status_str = "Not verifiable (file read error)"
+                current_sha256 = None
+                current_sha512 = None
         else:
-            current_sha256 = evidence.hash_sha256 or hashlib.sha256(evidence.file_name.encode()).hexdigest()
-            current_sha512 = hashlib.sha512(current_sha256.encode()).hexdigest()
+            current_sha256 = None
+            current_sha512 = None
             
         is_simulated = not (evidence.file_path and os.path.exists(evidence.file_path))
         

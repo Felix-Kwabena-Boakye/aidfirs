@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Terminal, Cpu, Zap, Activity, ShieldCheck, ChevronRight, Play } from 'lucide-react';
+import { Terminal, Cpu, Zap, ShieldCheck, ChevronRight, Play } from 'lucide-react';
 import { analysisAPI } from '../api';
 
 const ZMode = () => {
     const [command, setCommand] = useState('');
     const [isExecuting, setIsExecuting] = useState(false);
     const [logs, setLogs] = useState([
-        { time: new Date().toLocaleTimeString(), type: 'info', msg: 'Cloud Z Autonomous Kernel initialized.' },
-        { time: new Date().toLocaleTimeString(), type: 'system', msg: 'Universal Recovery Engine: Ready' },
-        { time: new Date().toLocaleTimeString(), type: 'system', msg: 'Modular AI Orchestrator: Active (Claude 3.5 Sonnet)' }
+        { time: new Date().toLocaleTimeString(), type: 'info', msg: 'Autonomous execution console initialized.' },
+        { time: new Date().toLocaleTimeString(), type: 'system', msg: 'No autonomous forensic task currently running.' }
     ]);
     const logEndRef = useRef(null);
 
@@ -20,35 +19,43 @@ const ZMode = () => {
         setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), type, msg }]);
     };
 
-    const handleExecute = (e) => {
+    const handleExecute = async (e) => {
         e.preventDefault();
         if (!command.trim() || isExecuting) return;
 
         setIsExecuting(true);
-        addLog(`User Instruction Received: "${command}"`, 'user');
+        addLog(`Instruction: "${command}"`, 'user');
 
-        // Simulate AI Thought Process
-        setTimeout(() => {
-            addLog('AI Planning: Analyzing system capabilities...', 'ai');
-            setTimeout(() => {
-                addLog('Plan Created: [1] Scan Disk, [2] Extract Metadata, [3] Summarize Findings', 'ai');
-                setTimeout(() => {
-                    addLog('Action: Initiating Disk Fragment Carving...', 'system');
-                    setTimeout(() => {
-                        addLog('Step Complete: 457 fragments retrieved.', 'success');
-                        setTimeout(() => {
-                            addLog('Action: Running AI Metadata Classifier...', 'system');
-                            setTimeout(() => {
-                                addLog('Step Complete: Critical indicators found in 12 files.', 'success');
-                                setIsExecuting(false);
-                                setCommand('');
-                                addLog('Autonomous Task Completed Successfully.', 'done');
-                            }, 1500);
-                        }, 1000);
-                    }, 2000);
-                }, 1000);
-            }, 1000);
-        }, 800);
+        try {
+            const res = await analysisAPI.systemExecute(command);
+            const data = res.data;
+
+            if (data && data.status === 'no_task') {
+                addLog('No autonomous forensic task currently running.', 'system');
+                (data.results || []).forEach((r) => {
+                    if (r.message) addLog(r.message, 'system');
+                });
+            } else {
+                addLog('Task executed against the forensic backend.', 'ai');
+                (data.log || []).forEach((entry) => {
+                    addLog(`[${entry.action}] ${entry.details}`, 'ai');
+                });
+                (data.results || []).forEach((r) => {
+                    if (r.signatures_found !== undefined) {
+                        addLog(`Scan result: ${r.signatures_found} file signature(s) identified.`, 'success');
+                    } else if (r.summary) {
+                        addLog(`Summary: ${r.summary}`, 'success');
+                    } else if (r.message) {
+                        addLog(r.message, 'success');
+                    }
+                });
+            }
+        } catch (err) {
+            addLog(`Execution failed: ${err?.message || 'unknown error'}`, 'system');
+        } finally {
+            setIsExecuting(false);
+            setCommand('');
+        }
     };
 
     return (
@@ -60,7 +67,7 @@ const ZMode = () => {
                         <Cpu size={24} />
                     </div>
                     <div>
-                        <div className="text-[10px] uppercase text-blue-500 font-bold">Mental State</div>
+                        <div className="text-[10px] uppercase text-blue-500 font-bold">System Status</div>
                         <div className="text-lg font-bold text-white tracking-widest">READY / IDLE</div>
                     </div>
                 </div>
@@ -70,8 +77,8 @@ const ZMode = () => {
                         <Zap size={24} className="text-purple-400" />
                     </div>
                     <div>
-                        <div className="text-[10px] uppercase text-purple-500 font-bold">Neural Engine</div>
-                        <div className="text-lg font-bold text-white tracking-widest">HIGH-POWER</div>
+                        <div className="text-[10px] uppercase text-purple-500 font-bold">Execution Mode</div>
+                        <div className="text-lg font-bold text-white tracking-widest">MANUAL</div>
                     </div>
                 </div>
 
@@ -80,8 +87,8 @@ const ZMode = () => {
                         <ShieldCheck size={24} className="text-green-400" />
                     </div>
                     <div>
-                        <div className="text-[10px] uppercase text-green-500 font-bold">Subsystem Integrity</div>
-                        <div className="text-lg font-bold text-white tracking-widest">STABLE</div>
+                        <div className="text-[10px] uppercase text-green-500 font-bold">Backend Task</div>
+                        <div className="text-lg font-bold text-white tracking-widest">NONE</div>
                     </div>
                 </div>
             </div>
@@ -94,7 +101,7 @@ const ZMode = () => {
                 <div className="bg-blue-950/40 border-b border-blue-900 px-4 py-2 flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                         <Terminal size={14} />
-                        <span className="text-xs font-bold uppercase tracking-widest text-blue-300">Autonomous Z-Kernel Console</span>
+                        <span className="text-xs font-bold uppercase tracking-widest text-blue-300">Autonomous Execution Console</span>
                     </div>
                     <div className="flex space-x-1.5">
                         <div className="w-2.5 h-2.5 rounded-full bg-red-900/40 border border-red-500/50"></div>
@@ -125,7 +132,7 @@ const ZMode = () => {
                             <span className="text-blue-900 text-[10px] mt-1 shrink-0">[{new Date().toLocaleTimeString()}]</span>
                             <span className="text-blue-300 animate-pulse">
                                 <span className="opacity-50 mr-2">{'>'}</span>
-                                Processing...
+                                Executing against backend...
                             </span>
                         </div>
                     )}
@@ -141,7 +148,7 @@ const ZMode = () => {
                             value={command}
                             onChange={(e) => setCommand(e.target.value)}
                             disabled={isExecuting}
-                            placeholder="Enter high-level command (e.g., 'Autonomous scan and report latest case')"
+                            placeholder="Enter an instruction (e.g. 'scan' — provide an image path to run a real scan)"
                             className="w-full bg-transparent border border-blue-900 rounded-lg py-3 pl-10 pr-14 text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50 placeholder-blue-950/50 tracking-wider"
                         />
                         <button
@@ -158,20 +165,20 @@ const ZMode = () => {
             {/* HUD Footer Information */}
             <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-[10px]">
-                    <div className="text-blue-900 font-bold uppercase">Uptime</div>
-                    <div className="text-blue-400">00:00:24:55</div>
+                    <div className="text-blue-900 font-bold uppercase">Session</div>
+                    <div className="text-blue-400">ACTIVE</div>
                 </div>
                 <div className="text-[10px]">
-                    <div className="text-blue-900 font-bold uppercase">Data Processed</div>
-                    <div className="text-blue-400">1.2 TB</div>
+                    <div className="text-blue-900 font-bold uppercase">Active Task</div>
+                    <div className="text-blue-400">NONE</div>
                 </div>
                 <div className="text-[10px]">
                     <div className="text-blue-900 font-bold uppercase">Current Case</div>
-                    <div className="text-blue-400">NONE / MONITORING</div>
+                    <div className="text-blue-400">NONE</div>
                 </div>
                 <div className="text-[10px]">
-                    <div className="text-blue-900 font-bold uppercase">Z-Level</div>
-                    <div className="text-blue-400">NARROW_GENERAL_BETA</div>
+                    <div className="text-blue-900 font-bold uppercase">Engine</div>
+                    <div className="text-blue-400">SYSTEM_AGENT</div>
                 </div>
             </div>
 

@@ -639,6 +639,8 @@ User Question:
 
     def classify_files(self, forensic_data):
         """Classify files using real AI reasoning or mock fallback."""
+        if not self._has_submitted_evidence(forensic_data):
+            return self._insufficient_response("Insufficient evidence: no forensic data was provided for classification.")
         prompt = f"Classify the following forensic artifacts by threat level (Critical, Suspicious, Benign). For each, explain why in one sentence:\n\n{forensic_data}"
         response = self._call_claude(prompt, system_prompt=self.MASTER_SYSTEM_PROMPT)
         if not response:
@@ -653,21 +655,70 @@ User Question:
             **normalized
         }
 
+    def _extract_file_names(self, data):
+        """Pull real file names from forensic data structures for honest reporting."""
+        parsed = None
+        if isinstance(data, str):
+            try:
+                parsed = json.loads(data)
+            except Exception:
+                return []
+        elif isinstance(data, (list, dict)):
+            parsed = data
+        if isinstance(parsed, dict):
+            for key in ("evidence", "files", "recovered_files", "items", "records"):
+                lst = parsed.get(key)
+                if isinstance(lst, list):
+                    for item in lst:
+                        if isinstance(item, dict):
+                            name = item.get("file_name") or item.get("name") or item.get("original_name")
+                            if name:
+                                return [str(name)]
+            name = parsed.get("file_name") or parsed.get("name") or parsed.get("original_name")
+            if name:
+                return [str(name)]
+        elif isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    name = item.get("file_name") or item.get("name") or item.get("original_name")
+                    if name:
+                        return [str(name)]
+        return []
+
+    def _has_submitted_evidence(self, forensic_data):
+        """Whether any real forensic data was submitted for analysis."""
+        if self._extract_file_names(forensic_data):
+            return True
+        data_str = forensic_data if isinstance(forensic_data, str) else json.dumps(forensic_data, default=str)
+        stripped = data_str.strip()
+        return bool(stripped and stripped not in ("[]", "{}", "null", "None", ""))
+
     def _generate_fallback_classification_text(self, forensic_data):
-        return """1. Case Summary: Offline File Classification
+        """Honest offline fallback: no classification is produced; only registered files are echoed."""
+        names = self._extract_file_names(forensic_data)
+        if names:
+            evidence_block = "\n".join(f"- {name}" for name in names)
+            evidence_note = f"\nFiles present in the submitted data:\n{evidence_block}"
+        else:
+            evidence_note = "\nNo file metadata was present in the submitted data."
+
+        return f"""1. Case Summary: Offline File Classification
+The AI classification engine is offline or unreachable, so no threat classification was produced for this evidence.
 2. Evidence Analysis:
-- files/Physical_Disk_Image_001.E01: Benign - Primary image backup source.
-- files/payload.exe: Critical - High-entropy executable in temporary directory indicating potential malware execution.
-- files/secret_document.txt: Suspicious - Deleted shortly after creation with Alternate Data Streams (ADS) present.
+No classifications were generated. File-level metadata was not scored.{evidence_note}
 3. Timeline Reconstruction:
-- 2026-06-23T00:15:00Z -> payload.exe created.
-- 2026-06-23T00:15:30Z -> secret_document.txt deleted.
-4. Suspicious Findings: Unexpected deletions and execution signatures.
-5. Conclusion: System exhibits indicators of anti-forensic activity.
-6. Recommendations: Run memory forensics to check for active DLL injections."""
+No timeline was reconstructed because no classification was performed.
+4. Suspicious Findings:
+No findings were generated.
+5. Conclusion:
+Insufficient evidence: the AI classification engine is unavailable. Re-run this analysis once the forensic AI service is reachable.
+6. Recommendations:
+Verify the forensic AI service configuration and retry the classification."""
 
     def detect_anomalies(self, forensic_data):
         """Detect anomalies using AI or fallback."""
+        if not self._has_submitted_evidence(forensic_data):
+            return self._insufficient_response("Insufficient evidence: no forensic data was provided for anomaly detection.")
         prompt = self.ANOMALY_DETECTION_PROMPT.format(FORENSIC_DATA=forensic_data)
         response = self._call_claude(prompt, system_prompt=self.MASTER_SYSTEM_PROMPT)
         if not response:
@@ -683,17 +734,62 @@ User Question:
         }
 
     def _generate_fallback_anomalies_text(self, forensic_data):
+        """Honest offline fallback: no anomaly assessment is produced without AI analysis."""
         return """1. Case Summary: Offline Anomaly Detection
+The AI detection engine is offline or unreachable, so no anomaly assessment was produced for this evidence.
 2. Evidence Analysis:
-- Suspicious time-stomping on payload.exe (MFT creation timestamp mismatch).
-- Alternate Data Streams (ADS) attached to text documents.
+No anomalies were scored against the submitted evidence.
 3. Timeline Reconstruction:
-- Rapid deletion sequence detected on 2026-06-23 between 00:12:00Z and 00:15:00Z.
+No timeline was reconstructed because no anomaly scan was performed.
 4. Suspicious Findings:
-- Unexpected deletions of log files (Syslog, Event Logs cleared).
-- Severity: High.
-5. Conclusion: High-risk file patterns indicate data exfiltration and log clearing.
-6. Recommendations: Acquire BitLocker recovery keys and inspect Registry shellbags."""
+No findings were generated.
+5. Conclusion:
+Insufficient evidence: the AI anomaly detection engine is unavailable. Re-run this analysis once the forensic AI service is reachable.
+6. Recommendations:
+Verify the forensic AI service configuration and retry anomaly detection."""
+
+    def _verify_evidence(self, db_data):
+        """Gate: confirm real evidence (with hashes and timestamps) exists before AI analysis."""
+        evidence = (db_data or {}).get("evidence") or []
+        if evidence:
+            missing = [getattr(ev, "file_name", "unknown") for ev in evidence if not getattr(ev, "hash_sha256", None)]
+            if not missing:
+                return {"verified": True, "reason": ""}
+            return {
+                "verified": False,
+                "reason": f"Insufficient evidence: {len(missing)} evidence record(s) lack file hashes.",
+            }
+
+        tool_data = (db_data or {}).get("tool_data")
+        entries = []
+        if isinstance(tool_data, dict):
+            for key in ("evidence", "files", "recovered_files", "items"):
+                if isinstance(tool_data.get(key), list):
+                    entries = tool_data[key]
+                    break
+        elif isinstance(tool_data, list):
+            entries = tool_data
+
+        for item in entries:
+            if isinstance(item, dict) and (item.get("hash_sha256") or item.get("file_name")):
+                return {"verified": True, "reason": ""}
+
+        return {"verified": False, "reason": "Insufficient evidence: no evidence with file hashes was provided for this case."}
+
+    def _insufficient_response(self, reason):
+        """Structured honest response returned when evidence cannot be verified."""
+        return {
+            "success": False,
+            "report": reason,
+            "response": reason,
+            "model": self.model_name,
+            "summary": reason,
+            "key_findings": ["No evidence available for analysis."],
+            "timeline_analysis": ["No timeline available."],
+            "suspicious_items": ["No suspicious items analyzed."],
+            "final_conclusion": reason,
+            "insufficient_evidence": True,
+        }
 
     def generate_report(self, case_context, forensic_data, ai_findings):
         """Generate a forensic report using AI or a structured fallback."""
@@ -704,6 +800,11 @@ User Question:
             summary=db_data["case"].description if db_data["case"] else None,
             raw_mongodb_data=db_data
         )
+
+        # Evidence verification gate: never produce an AI report without verifiable evidence.
+        verification = self._verify_evidence(db_data)
+        if not verification["verified"]:
+            return self._insufficient_response(verification["reason"])
 
         prompt = self.FORENSIC_REPORT_GENERATION_PROMPT.format(
             FORMATTED_FORENSIC_CONTEXT=formatted_context
@@ -729,7 +830,7 @@ User Question:
         return result
 
     def _generate_fallback_report_text(self, formatted_context, ai_findings=None):
-        """Generates a structured report matching the 9 sections when offline."""
+        """Honest offline report: reflects only registered evidence; makes no recovery or analysis claims."""
         try:
             ctx = json.loads(formatted_context)
         except Exception:
@@ -755,12 +856,18 @@ User Question:
         else:
             timeline_str = "- No timeline events registered.\n"
 
+        hash_items = [ev.get("file_hash") for ev in evidence_items if ev.get("file_hash")]
+        if hash_items:
+            hash_str = "\n".join(f"- {h}" for h in hash_items)
+        else:
+            hash_str = "- No file hashes are registered for the evidence in this case."
+
         findings_text = ""
         if ai_findings:
             findings_text = f"\n\nAI Findings context:\n{ai_findings}"
 
         report = f"""1. Executive Summary
-This report presents the digital forensic analysis of Case {case_title} (ID: {case_id}). The objective is to identify potential evidence and reconstruct key event timelines based on recovered and active files.
+This report summarizes the digital forensic case {case_title} (ID: {case_id}) using only the evidence metadata registered in the system. The forensic AI service is offline or unreachable, so this report makes no recovery, scanning, or analysis claims beyond the registered data below.
 
 2. Case Details
 - Case Identifier: {case_id}
@@ -769,33 +876,28 @@ This report presents the digital forensic analysis of Case {case_title} (ID: {ca
 - Investigation Status: Under active review
 
 3. Evidence Overview
-The following digital assets were acquired and analyzed:
+The following digital assets are registered in this case:
 {evidence_str}
 4. File Recovery Analysis
-A sector-by-sector extraction and file signature check was executed:
-- Active files: cataloged and hashed.
-- Deleted files: MFT structures and raw partition headers scanned.
-- Recovery Status: Safe file restoration completed for available sectors.
-
+No recovery or sector scan was executed during report generation. Only registered evidence records are reflected:
+{evidence_str}
 5. Timeline of Events
-Chronological overview of detected system events:
+Registered timeline events:
 {timeline_str}
 6. Suspicious Activity Analysis
-- Unexpected File Deletions: Several user directories contain typical anti-forensic deletion patterns.
-- High-Risk File Extensions: None identified at present.
-- Timestomping Check: Event sequences appear linear.
+No automated anomaly analysis was performed because the forensic AI service is offline. No suspicious activity findings were generated.{findings_text}
 
 7. Technical Findings
-- File Integrity: MD5/SHA256 hashes generated for all recovered nodes.
-- Partition structure: Healthy.
-- Metadata: Exif and internal metadata extracted successfully.{findings_text}
+Registered file hashes:
+{hash_str}
+Partition and metadata inspection was not performed during this offline report.
 
 8. Final Conclusion
-The forensic data indicates that file deletion events occurred during the timeline. While some metadata records were damaged, recovery mechanisms succeeded in restoring critical case files.
+The case contains the evidence records listed above. This report was generated in offline mode and asserts no file recovery, hash computation, or anomaly detection results.
 
 9. Recommendations for Investigators
-1. Secure a physical bit-stream image clone of the primary storage drive.
-2. Conduct memory dump analysis to check for resident volatile processes.
+1. Confirm the forensic AI service is online before requesting a full AI analysis report.
+2. Verify registered evidence hashes through independent acquisition tooling.
 3. Validate chain-of-custody logs for all target devices."""
 
         return report
