@@ -34,6 +34,9 @@ urlpatterns = [
     path('<str:pk>/exiftool/', EvidenceViewSet.as_view({'post': 'exiftool'}), name='evidence-exiftool'),
     path('<str:pk>/recover-and-analyze/', EvidenceViewSet.as_view({'post': 'recover_and_analyze'}), name='evidence-recover-and-analyze'),
     path('<str:pk>/restore-files/', EvidenceViewSet.as_view({'post': 'restore_files'}), name='evidence-restore-files'),
+    path('<str:pk>/hash/', EvidenceViewSet.as_view({'post': 'compute_hashes'}), name='evidence-compute-hashes'),
+    path('<str:pk>/verify-integrity/', EvidenceViewSet.as_view({'post': 'verify_integrity'}), name='evidence-verify-integrity'),
+    # backward-compat alias (underscore form)
+    path('<str:pk>/verify_integrity/', EvidenceViewSet.as_view({'post': 'verify_integrity'}), name='evidence-verify-integrity-compat'),
 
 ]
-

@@ -5,6 +5,9 @@ from rest_framework import status
 from accounts.permissions import IsInvestigator
 from .models import Device
 from .serializers import DeviceSerializer
+import logging
+
+logger = logging.getLogger("devices.views")
 
 
 class DeviceListView(APIView):
@@ -121,81 +124,50 @@ class DeviceScanView(APIView):
             return []
 
     def post(self, request):
+        logger.info("[DeviceScanView] Starting fresh device scan...")
         agent_ok, agent_health = self._probe_agent()
         agent_devices_raw = self._agent_scan()
 
         if not agent_devices_raw:
+            logger.info("[DeviceScanView] Agent unreachable, falling back to direct host scan.")
             agent_devices_raw = self._direct_scan()
 
-        # Save/update detected devices into MongoDB
-        if agent_devices_raw:
-            for raw in agent_devices_raw:
-                try:
-                    serial = raw.get("serial_number", "")
-                    drive_letter = raw.get("drive_letter", "")
-                    existing = Device.get_all()
-                    already_exists = any(
-                        (serial and d.serial_number == serial) or
-                        (drive_letter and d.drive_letter == drive_letter)
-                        for d in existing
-                    )
-                    if not already_exists:
-                        Device.create(
-                            device_name=raw.get("volume_name") or raw.get("model") or "USB Drive",
-                            serial_number=serial,
-                            model=raw.get("model", ""),
-                            filesystem=raw.get("filesystem", ""),
-                            size_gb=float(raw.get("size_gb") or raw.get("capacity") or 0.0),
-                            drive_letter=drive_letter,
-                            source=raw.get("source", "AIDFIRS Agent"),
-                            vendor=raw.get("vendor", ""),
-                            manufacturer=raw.get("manufacturer", ""),
-                            bus_type=raw.get("bus_type", "USB"),
-                            device_path=raw.get("device_path", ""),
-                            volume_label=raw.get("volume_label", ""),
-                            mount_point=raw.get("mount_point", ""),
-                            capacity_bytes=int(raw.get("capacity_bytes") or 0),
-                            drive_type=raw.get("drive_type", "USB Drive"),
-                        )
-                except Exception as ex:
-                    print(f"[DeviceScanView] Device save notice: {ex}")
+        # Log every detected drive
+        for raw in (agent_devices_raw or []):
+            logger.info(
+                "[DeviceScanView] Detected drive: letter=%s filesystem=%s serial=%s size_gb=%s "
+                "drive_type=%s source=%s",
+                raw.get("drive_letter", ""),
+                raw.get("filesystem", ""),
+                raw.get("serial_number", ""),
+                raw.get("size_gb", ""),
+                raw.get("drive_type", ""),
+                raw.get("source", "agent"),
+            )
 
-        # Fetch current MongoDB stored devices
-        db_devices = Device.get_all()
+        # Synchronize MongoDB: upsert active devices and purge disconnected ones.
+        # This replaces the previous merge-with-history logic which caused stale
+        # devices (e.g. unplugged USB drives) to persist in the device list.
+        active_devices = Device.sync_active_devices(agent_devices_raw or [])
 
-        # Merge live agent results with DB
-        merged = []
-        seen_serials = set()
+        active_list = [d.to_dict() for d in active_devices]
 
-        if agent_devices_raw:
-            for raw in agent_devices_raw:
-                serial = raw.get("serial_number", "")
-                if serial and serial not in seen_serials:
-                    seen_serials.add(serial)
-                merged.append(raw)
+        logger.info(
+            "[DeviceScanView] Scan complete. %d active device(s) in MongoDB after sync.",
+            len(active_list)
+        )
 
-        for d in db_devices:
-            serial = d.serial_number
-            if serial and serial not in seen_serials:
-                seen_serials.add(serial)
-                merged.append(d.to_dict())
-            elif not serial and d.to_dict() not in merged:
-                merged.append(d.to_dict())
-
-        # Update scanning flag
         from django.conf import settings
         settings.DEVICE_SCANNING_ACTIVE = True
 
         return Response({
             "status": "scanning_started",
-            "agent_reachable": agent_ok or len(agent_devices_raw) > 0,
+            "agent_reachable": agent_ok or len(agent_devices_raw or []) > 0,
             "agent_info": agent_health,
-            "devices": merged,
-            "count": len(merged),
+            "devices": active_list,
+            "count": len(active_list),
             "scanning": True,
-            "message": (
-                f"Auto-Scan active. Detected {len(merged)} USB / storage device(s)."
-            ),
+            "message": f"Live scan complete. {len(active_list)} storage device(s) currently connected.",
         })
 
     def delete(self, request):

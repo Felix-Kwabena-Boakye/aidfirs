@@ -39,7 +39,7 @@ class Evidence:
     ]
     
     def __init__(self, case_id, evidence_type, file_name, file_path,
-                 file_size=0, hash_md5='', hash_sha1='', hash_sha256='',
+                 file_size=0, hash_md5='', hash_sha1='', hash_sha256='', hash_sha512='',
                  description='', collector_id='', status='pending',
                  collected_at=None, analyzed_at=None, tags=None, metadata=None, _id=None):
         self._id = _id
@@ -51,6 +51,7 @@ class Evidence:
         self.hash_md5 = hash_md5
         self.hash_sha1 = hash_sha1
         self.hash_sha256 = hash_sha256
+        self.hash_sha512 = hash_sha512
         self.description = description
         self.collector_id = collector_id
         self.status = status
@@ -76,31 +77,35 @@ class Evidence:
     @staticmethod
     def compute_hashes(file_path):
         """
-        Compute real MD5, SHA1, SHA256 cryptographic hashes for a file.
+        Compute real MD5, SHA1, SHA256, SHA512 cryptographic hashes for a file.
         Returns hashes only for files that actually exist on disk.
-        Returns None for all three if the file cannot be read.
+        Returns None for all fields if the file cannot be read.
         """
         if not file_path or not os.path.isfile(file_path):
-            return {'md5': None, 'sha1': None, 'sha256': None}
+            return {'md5': None, 'sha1': None, 'sha256': None, 'sha512': None}
 
         md5_hash = hashlib.md5()
         sha1_hash = hashlib.sha1()
         sha256_hash = hashlib.sha256()
-        
+        sha512_hash = hashlib.sha512()
+
         try:
             with open(file_path, 'rb') as f:
-                for chunk in iter(lambda: f.read(4096), b""):
+                for chunk in iter(lambda: f.read(65536), b""):
                     md5_hash.update(chunk)
                     sha1_hash.update(chunk)
                     sha256_hash.update(chunk)
-            
+                    sha512_hash.update(chunk)
+
             return {
                 'md5': md5_hash.hexdigest(),
                 'sha1': sha1_hash.hexdigest(),
-                'sha256': sha256_hash.hexdigest()
+                'sha256': sha256_hash.hexdigest(),
+                'sha512': sha512_hash.hexdigest(),
             }
-        except Exception:
-            return {'md5': None, 'sha1': None, 'sha256': None}
+        except Exception as ex:
+            logger.error("[Evidence.compute_hashes] Failed to hash %s: %s", file_path, ex)
+            return {'md5': None, 'sha1': None, 'sha256': None, 'sha512': None}
     
     @staticmethod
     def create(case_id, evidence_type, file_name, file_path,
@@ -193,14 +198,24 @@ class Evidence:
     def update_hashes(evidence_id, file_path):
         """
         Compute and persist cryptographic hashes after a file has been fully
-        recovered/written to disk.  Updates status from 'pending' to
-        'collected' and stamps the hash fields.
+        recovered/written to disk. Updates status from 'pending' to
+        'collected' and stamps the hash fields (SHA-256, SHA-512, MD5, SHA-1).
 
-        Returns a dict with keys: success, sha256, duplicate, existing_id.
+        Required workflow:
+            Create Evidence -> Generate SHA256 -> Generate SHA512
+            -> Save Hashes -> Status = READY -> Recovery -> Analysis
+
+        Returns a dict with keys: success, sha256, sha512, duplicate, existing_id.
         """
+        logger.info("[Evidence.update_hashes] SHA256 started for evidence %s path=%s", evidence_id, file_path)
+
         hashes = Evidence.compute_hashes(file_path)
         if not hashes.get('sha256'):
+            logger.error("[Evidence.update_hashes] File unreadable or not found: %s", file_path)
             return {"success": False, "reason": "File unreadable or not found"}
+
+        logger.info("[Evidence.update_hashes] SHA256 completed: %s", hashes['sha256'])
+        logger.info("[Evidence.update_hashes] SHA512 completed: %s", hashes['sha512'])
 
         if evidence_collection is not None:
             try:
@@ -210,24 +225,35 @@ class Evidence:
                         "hash_md5": hashes['md5'],
                         "hash_sha1": hashes['sha1'],
                         "hash_sha256": hashes['sha256'],
+                        "hash_sha512": hashes['sha512'],
                         "status": "collected",
                     }}
                 )
-                return {"success": True, "sha256": hashes['sha256'], "duplicate": False}
+                logger.info(
+                    "[Evidence.update_hashes] Evidence %s updated — status=collected "
+                    "SHA256=%s... SHA512=%s...",
+                    evidence_id, hashes['sha256'][:16], hashes['sha512'][:16]
+                )
+                return {
+                    "success": True,
+                    "sha256": hashes['sha256'],
+                    "sha512": hashes['sha512'],
+                    "duplicate": False
+                }
             except pymongo_errors.DuplicateKeyError:
-                # Another document already owns this SHA-256 hash.
                 sha256 = hashes['sha256']
                 existing = evidence_collection.find_one({"hash_sha256": sha256})
                 existing_id = str(existing["_id"]) if existing else None
                 logger.warning(
-                    f"Hash update collision: SHA-256 {sha256} belongs to evidence {existing_id}. "
-                    f"Marking evidence {evidence_id} as duplicate."
+                    "[Evidence.update_hashes] Hash collision: SHA-256 %s belongs to evidence %s. "
+                    "Marking evidence %s as duplicate.",
+                    sha256, existing_id, evidence_id
                 )
                 evidence_collection.update_one(
                     {"_id": ObjectId(evidence_id)},
                     {"$set": {"status": "duplicate"}, "$addToSet": {"tags": "duplicate"}}
                 )
-                return {"success": True, "sha256": sha256, "duplicate": True, "existing_id": existing_id}
+                return {"success": True, "sha256": sha256, "sha512": hashes.get('sha512'), "duplicate": True, "existing_id": existing_id}
         return {"success": False, "reason": "MongoDB not available"}
     
     @staticmethod
@@ -492,6 +518,7 @@ class Evidence:
             hash_md5=data.get('hash_md5', ''),
             hash_sha1=data.get('hash_sha1', ''),
             hash_sha256=data.get('hash_sha256', ''),
+            hash_sha512=data.get('hash_sha512', ''),
             description=data.get('description', ''),
             collector_id=data.get('collector_id', ''),
             status=data.get('status', 'pending'),
@@ -515,6 +542,7 @@ class Evidence:
             "hash_md5": self.hash_md5,
             "hash_sha1": self.hash_sha1,
             "hash_sha256": self.hash_sha256,
+            "hash_sha512": self.hash_sha512,
             "description": self.description,
             "collector_id": self.collector_id,
             "status": self.status,

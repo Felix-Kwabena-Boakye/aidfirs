@@ -38,7 +38,8 @@ class EvidenceViewSet(viewsets.ViewSet):
         if self.action in [
             'create', 'update', 'destroy', 'mark_analyzed',
             'recover_and_analyze', 'restore_files', 'photorec_carve',
-            'testdisk_scan', 'autopsy_ingest', 'verify_integrity'
+            'testdisk_scan', 'autopsy_ingest', 'verify_integrity',
+            'compute_hashes',
         ]:
             # Only investigators and admins can create/update/delete/recover evidence
             return [IsInvestigator()]
@@ -1368,27 +1369,25 @@ class EvidenceViewSet(viewsets.ViewSet):
             return Response({'error': 'Evidence not found'}, status=status.HTTP_404_NOT_FOUND)
         if not self._check_evidence_access(request, evidence):
             return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
-            
+
         import hashlib
-        
-        # Calculate current hashes
+
         sha256 = hashlib.sha256()
         sha512 = hashlib.sha512()
-        
+
         status_str = "Not verifiable (file missing)"
         current_sha256 = None
         current_sha512 = None
-        
-        # If file exists, compute real hashes
+
         if evidence.file_path and os.path.exists(evidence.file_path):
             try:
                 with open(evidence.file_path, 'rb') as f:
-                    for chunk in iter(lambda: f.read(4096), b""):
+                    for chunk in iter(lambda: f.read(65536), b""):
                         sha256.update(chunk)
                         sha512.update(chunk)
                 current_sha256 = sha256.hexdigest()
                 current_sha512 = sha512.hexdigest()
-                
+
                 if evidence.hash_sha256 and current_sha256 != evidence.hash_sha256:
                     status_str = "✗ Modified"
                 elif evidence.hash_sha256 and current_sha256 == evidence.hash_sha256:
@@ -1402,9 +1401,9 @@ class EvidenceViewSet(viewsets.ViewSet):
         else:
             current_sha256 = None
             current_sha512 = None
-            
+
         is_simulated = not (evidence.file_path and os.path.exists(evidence.file_path))
-        
+
         try:
             from cases.coc_models import ChainOfCustody
             username = getattr(request.user, 'username', 'unknown')
@@ -1419,11 +1418,107 @@ class EvidenceViewSet(viewsets.ViewSet):
             )
         except Exception:
             pass
-            
+
         return Response({
             "status": status_str,
             "hash_sha256": current_sha256,
             "hash_sha512": current_sha512,
             "original_sha256": evidence.hash_sha256,
             "is_simulated": is_simulated
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='hash')
+    def compute_hashes(self, request, pk=None):
+        """
+        POST /api/evidence/<pk>/hash/
+
+        Runs the full cryptographic hashing workflow:
+            Generate SHA256 -> Generate SHA512 -> Save both to MongoDB
+            -> Set status to 'collected' (READY for recovery).
+
+        Required before recovery and analysis can begin.
+        Returns both hashes on success.
+        """
+        logger.info("[EvidenceViewSet.compute_hashes] Hash computation requested for evidence %s", pk)
+
+        evidence = Evidence.get_by_id(pk)
+        if not evidence:
+            logger.error("[EvidenceViewSet.compute_hashes] Evidence not found: %s", pk)
+            return Response({'error': 'Evidence not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not self._check_evidence_access(request, evidence):
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        file_path = evidence.file_path
+        if not file_path or not os.path.isfile(file_path):
+            logger.warning(
+                "[EvidenceViewSet.compute_hashes] Evidence file not on disk: %s "
+                "(evidence_id=%s). Status remains pending until file is acquired.",
+                file_path, pk
+            )
+            return Response({
+                'error': 'Evidence file not found on disk. Acquire the file before hashing.',
+                'file_path': file_path,
+                'status': evidence.status,
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        logger.info("[EvidenceViewSet.compute_hashes] SHA256 started for %s", pk)
+        result = Evidence.update_hashes(pk, file_path)
+
+        if not result.get('success'):
+            logger.error(
+                "[EvidenceViewSet.compute_hashes] Hashing failed for evidence %s: %s",
+                pk, result.get('reason', 'unknown error')
+            )
+            return Response({
+                'error': result.get('reason', 'Hash computation failed'),
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        logger.info(
+            "[EvidenceViewSet.compute_hashes] SHA256 completed: %s",
+            result.get('sha256', '')[:16]
+        )
+        logger.info(
+            "[EvidenceViewSet.compute_hashes] SHA512 completed: %s",
+            result.get('sha512', '')[:16]
+        )
+        logger.info(
+            "[EvidenceViewSet.compute_hashes] Evidence %s updated — status=READY", pk
+        )
+
+        if result.get('duplicate'):
+            return Response({
+                'status': 'duplicate',
+                'message': 'This evidence file is a duplicate of an existing record.',
+                'sha256': result.get('sha256'),
+                'sha512': result.get('sha512'),
+                'existing_id': result.get('existing_id'),
+            }, status=status.HTTP_200_OK)
+
+        # Log audit trail
+        try:
+            from cases.coc_models import ChainOfCustody
+            username = getattr(request.user, 'username', 'unknown')
+            ChainOfCustody.create(
+                case_id=evidence.case_id,
+                evidence_id=str(evidence._id),
+                action="Hash Computation",
+                performed_by=username,
+                notes=(
+                    f"SHA-256 and SHA-512 computed for '{evidence.file_name}'. "
+                    f"Evidence status set to READY (collected)."
+                ),
+                hash_before=evidence.hash_sha256 or '',
+                hash_after=result.get('sha256', ''),
+            )
+        except Exception:
+            pass
+
+        return Response({
+            'status': 'READY',
+            'message': 'SHA-256 and SHA-512 computed successfully. Evidence is READY for recovery and analysis.',
+            'evidence_id': pk,
+            'sha256': result.get('sha256'),
+            'sha512': result.get('sha512'),
+            'evidence_status': 'collected',
         }, status=status.HTTP_200_OK)

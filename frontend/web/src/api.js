@@ -210,7 +210,7 @@ export const evidenceAPI = {
     api.delete(`/evidence/${id}/`),
 
   verifyIntegrity: (id) =>
-    api.post(`/evidence/${id}/verify_integrity/`),
+    api.post(`/evidence/${id}/verify-integrity/`),
 
   photorecCarve: (id) =>
     api.post(`/evidence/${id}/photorec-carve/`),
@@ -223,6 +223,10 @@ export const evidenceAPI = {
 
   recoverAndAnalyze: (id) =>
     api.post(`/evidence/${id}/recover-and-analyze/`),
+
+  // Trigger SHA-256 + SHA-512 computation → status = READY
+  computeHashes: (id) =>
+    api.post(`/evidence/${id}/hash/`),
 };
 
 /* =========================================================

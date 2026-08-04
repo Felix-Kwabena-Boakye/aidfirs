@@ -21,7 +21,8 @@ import {
   HardDrive,
   FileCheck,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -51,6 +52,9 @@ export default function Evidence() {
   // Integrity & AI prediction states
   const [integrityResults, setIntegrityResults] = useState({});
   const [verifyingIds, setVerifyingIds] = useState(new Set());
+
+  // Hash computation state — tracks which evidence items are being hashed
+  const [hashingIds, setHashingIds] = useState(new Set());
 
   // Devices & Diagnostics states
   const [detectedDevices, setDetectedDevices] = useState([]);
@@ -163,6 +167,31 @@ export default function Evidence() {
       });
     }
   };
+
+  const handleComputeHashes = async (id) => {
+    setHashingIds(prev => { const s = new Set(prev); s.add(id); return s; });
+    try {
+      const res = await evidenceAPI.computeHashes(id);
+      if (res.data?.status === 'READY') {
+        toast.success('SHA-256 & SHA-512 computed — evidence is READY for analysis.');
+      } else if (res.data?.status === 'duplicate') {
+        toast.warning(`Duplicate evidence: file already hashed as ${res.data.existing_id}.`);
+      } else {
+        toast.info(res.data?.message || 'Hash computation complete.');
+      }
+      await fetchEvidence();
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      if (err.response?.status === 422) {
+        toast.error('Cannot hash: file not yet acquired on disk. Run recovery first.');
+      } else {
+        toast.error(`Hash computation failed: ${msg}`);
+      }
+    } finally {
+      setHashingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
 
   const handleRecoverAndAnalyze = async (id) => {
     setIsRecovering(true);
@@ -739,9 +768,34 @@ export default function Evidence() {
                           <span>SHA256:</span> <span className="text-[9px] bg-slate-900 px-1 py-0.5 rounded text-cyan-500/80">{item.hash_sha256}</span>
                         </div>
                       )}
+                      {item.hash_sha512 && (
+                        <div className="w-full text-slate-400 overflow-hidden text-ellipsis whitespace-nowrap">
+                          <span>SHA512:</span> <span className="text-[9px] bg-slate-900 px-1 py-0.5 rounded text-purple-400/80">{item.hash_sha512.slice(0,32)}&hellip;</span>
+                        </div>
+                      )}
+                      {item.status === 'pending' && !item.hash_sha256 && (
+                        <div className="w-full flex items-center gap-1 text-yellow-500/80">
+                          <Hash size={10} />
+                          <span>PENDING_HASH — generate hashes before recovery</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/60">
+                      {/* Hash generation — must happen before Recover & Analyze */}
+                      {item.status === 'pending' && !item.hash_sha256 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleComputeHashes(item._id);
+                          }}
+                          disabled={hashingIds.has(item._id)}
+                          className="w-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold py-2 px-3 rounded text-xs transition-all shadow-md shadow-purple-500/10 flex items-center justify-center gap-1 border border-purple-400/20 disabled:opacity-50"
+                        >
+                          <Hash size={12} />
+                          <span>{hashingIds.has(item._id) ? 'Computing SHA-256 & SHA-512...' : 'Generate SHA-256 & SHA-512 Hashes'}</span>
+                        </button>
+                      )}
                       {/* Unified button */}
                       <button
                         onClick={(e) => {

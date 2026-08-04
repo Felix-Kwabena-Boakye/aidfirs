@@ -140,6 +140,69 @@ class Device:
         return Device.from_dict(doc)
 
     @staticmethod
+    def sync_active_devices(raw_devices):
+        """
+        Synchronizes MongoDB devices collection with current live scan results.
+        Upserts active devices and purges stale disconnected devices.
+        Returns list of active Device objects.
+        """
+        col = Device.get_collection()
+        active_serials = set()
+        active_letters = set()
+        active_devices = []
+
+        for raw in raw_devices:
+            serial = raw.get("serial_number", "")
+            letter = raw.get("drive_letter", "")
+            if serial and serial != "UNKNOWN":
+                active_serials.add(serial)
+            if letter:
+                active_letters.add(letter)
+
+            dev = Device.create(
+                device_name=raw.get("volume_name") or raw.get("device_name") or raw.get("model") or "Storage Device",
+                serial_number=serial,
+                model=raw.get("model", ""),
+                filesystem=raw.get("filesystem", ""),
+                size_gb=float(raw.get("size_gb") or raw.get("capacity") or 0.0),
+                drive_letter=letter,
+                source=raw.get("source", "AIDFIRS Agent"),
+                vendor=raw.get("vendor", ""),
+                manufacturer=raw.get("manufacturer", ""),
+                bus_type=raw.get("bus_type", ""),
+                device_path=raw.get("device_path", ""),
+                volume_label=raw.get("volume_label", ""),
+                mount_point=raw.get("mount_point", ""),
+                capacity_bytes=int(raw.get("capacity_bytes") or 0),
+                drive_type=raw.get("drive_type", "USB Drive"),
+            )
+            active_devices.append(dev)
+
+        if col is not None:
+            try:
+                # Remove documents from MongoDB that are no longer connected
+                all_docs = list(col.find())
+                for doc in all_docs:
+                    doc_serial = doc.get("serial_number", "")
+                    doc_letter = doc.get("drive_letter", "")
+                    is_active = (doc_serial and doc_serial in active_serials) or (doc_letter and doc_letter in active_letters)
+                    if not is_active:
+                        col.delete_one({"_id": doc["_id"]})
+            except Exception as ex:
+                print(f"[Device.sync_active_devices] Cleanup notice: {ex}")
+        
+        # Cleanup fallback JSON file if present
+        if os.path.exists(DEVICES_FILE):
+            try:
+                updated_json = [d.to_dict() for d in active_devices]
+                with open(DEVICES_FILE, 'w') as f:
+                    json.dump(updated_json, f, indent=2, default=str)
+            except Exception:
+                pass
+
+        return active_devices
+
+    @staticmethod
     def get_all():
         col = Device.get_collection()
         if col is not None:

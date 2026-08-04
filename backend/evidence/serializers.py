@@ -17,6 +17,7 @@ class EvidencePydantic(BaseModel):
     hash_md5: Optional[str] = None
     hash_sha1: Optional[str] = None
     hash_sha256: Optional[str] = None
+    hash_sha512: Optional[str] = None
     description: str = ''
     collector_id: Optional[str] = None
     status: Literal['pending', 'collected', 'analyzing', 'analyzed', 'archived', 'duplicate'] = 'pending'
@@ -37,6 +38,7 @@ class EvidenceSerializer(serializers.Serializer):
     hash_md5 = serializers.CharField(read_only=True)
     hash_sha1 = serializers.CharField(read_only=True)
     hash_sha256 = serializers.CharField(read_only=True)
+    hash_sha512 = serializers.CharField(read_only=True, allow_null=True, required=False)
     description = serializers.CharField(default='')
     collector_id = serializers.CharField(required=False)
     status = serializers.ChoiceField(

@@ -233,10 +233,10 @@ def _get_windows_usb_devices() -> List[USBDevice]:
     # 2. Try fast PowerShell query for hardware models/serials (1 sec timeout)
     ps_metadata = {}
     try:
-        ps_script = r"Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object Model, SerialNumber, InterfaceType, MediaType, Size, DeviceID | ConvertTo-Json"
+        ps_script = r"Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue | Select-Object Model, SerialNumber, InterfaceType, MediaType, Size, DeviceID, BusType | ConvertTo-Json"
         res = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
-            capture_output=True, text=True, timeout=1.5
+            capture_output=True, text=True, timeout=2.0
         )
         if res.stdout and res.stdout.strip():
             raw_data = json.loads(res.stdout)
@@ -255,8 +255,8 @@ def _get_windows_usb_devices() -> List[USBDevice]:
             continue
 
         drive_type_code = _get_drive_type_win32(letter)
-        # Type 2 = DRIVE_REMOVABLE (USB Flash / SD Card), Type 3 = DRIVE_FIXED (HDD/SSD/Mounted Image)
-        if drive_type_code not in (2, 3):
+        # Type 2 = DRIVE_REMOVABLE, 3 = DRIVE_FIXED, 4 = DRIVE_REMOTE, 5 = DRIVE_CDROM, 6 = DRIVE_RAMDISK
+        if drive_type_code not in (2, 3, 4, 5, 6):
             continue
 
         seen_letters.add(letter)
@@ -304,17 +304,55 @@ def _get_windows_usb_devices() -> List[USBDevice]:
         if size_gb == 0 and PSUTIL_AVAILABLE:
             size_gb = _get_disk_usage_gb(letter)
 
-        # Categorize drive type
-        if drive_type_code == 2:
-            drive_type = "USB Drive"
+        label_lower = label.lower()
+        model_str = f"Local Storage ({letter}:)"
+
+        # Enhanced Drive Classification
+        if "google drive" in label_lower or "google" in label_lower or fstype.lower() in ("googledrive", "gfs"):
+            drive_type = "Google Drive"
+            bus_type = "Cloud/Virtual"
             is_external = True
-        else:
-            if letter == 'C':
-                drive_type = "Internal HDD"
+            model_str = f"Google Drive ({letter}:)"
+        elif drive_type_code == 4:  # DRIVE_REMOTE
+            drive_type = "Network Drive"
+            bus_type = "Network"
+            is_external = True
+            model_str = f"Network Drive ({letter}:)"
+        elif drive_type_code == 5:  # DRIVE_CDROM
+            drive_type = "Mounted ISO"
+            bus_type = "Virtual"
+            is_external = True
+            model_str = f"Optical/ISO Drive ({letter}:)"
+        elif drive_type_code == 6:  # DRIVE_RAMDISK
+            drive_type = "Virtual Drive"
+            bus_type = "RAM"
+            is_external = True
+            model_str = f"RAM Disk ({letter}:)"
+        elif drive_type_code == 2:  # DRIVE_REMOVABLE (USB Mass Storage / SD Card)
+            drive_type = "USB Flash Drive"
+            bus_type = "USB"
+            is_external = True
+            model_str = f"USB Flash Drive ({letter}:)"
+        elif drive_type_code == 3:  # DRIVE_FIXED
+            if "recovery" in label_lower:
+                drive_type = "Recovery Partition"
+                bus_type = "SATA"
                 is_external = False
+                model_str = f"Recovery Partition ({letter}:)"
+            elif letter == 'C':
+                drive_type = "Internal HDD"
+                bus_type = "SATA"
+                is_external = False
+                model_str = f"Internal Hard Drive ({letter}:)"
             else:
-                drive_type = "External HDD"
-                is_external = True
+                drive_type = "Internal HDD"
+                bus_type = "SATA"
+                is_external = False
+                model_str = f"Fixed Disk ({letter}:)"
+        else:
+            drive_type = "Fixed Disk"
+            bus_type = "SATA"
+            is_external = False
 
         # Assign unique per-drive serial number to prevent DB collisions
         serial_str = vol_serial_hex if vol_serial_hex else f"DRIVE-{letter}-{capacity_bytes}"
@@ -326,13 +364,13 @@ def _get_windows_usb_devices() -> List[USBDevice]:
             drive_type=drive_type,
             size_gb=size_gb,
             serial_number=serial_str,
-            interface="USB" if is_external else "SATA",
+            interface=bus_type,
             is_external=is_external,
-            filesystem=fstype or "FAT32" if drive_type_code == 2 else "NTFS",
-            model=f"{drive_type} ({letter}:)",
-            vendor="Removable Media" if drive_type_code == 2 else "Storage",
-            manufacturer="Standard Storage",
-            bus_type="USB" if is_external else "SATA",
+            filesystem=fstype or ("FAT32" if drive_type == "USB Flash Drive" else "NTFS"),
+            model=model_str,
+            vendor="Google" if drive_type == "Google Drive" else ("Removable Media" if is_external else "Storage"),
+            manufacturer="System Storage",
+            bus_type=bus_type,
             device_path=f"\\\\.\\{letter}:"
         ))
 
