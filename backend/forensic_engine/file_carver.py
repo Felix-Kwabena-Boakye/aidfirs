@@ -262,10 +262,11 @@ class FileCarver:
             if footer_pos != -1:
                 return footer_pos + len(footer)
 
-            file_handle.seek(current_pos)
             return self.chunk_size  # Fallback
         except Exception:
             return self.chunk_size
+        finally:
+            file_handle.seek(current_pos)
 
     def recover_movies(self, image_path: str) -> List[Dict]:
         """
@@ -322,9 +323,13 @@ class FileCarver:
         outputs: List[Dict[str, Any]] = []
 
         target_path = image_path
-        if platform.system() == 'Windows' and len(image_path) >= 2 and image_path[1] == ':':
-            drive_letter = image_path[0].upper()
-            target_path = f'\\\\.\\{drive_letter}:'
+        if platform.system() == 'Windows':
+            clean = image_path.strip().rstrip('\\').rstrip('/')
+            if len(clean) == 2 and clean[1] == ':':
+                drive_letter = clean[0].upper()
+                target_path = f'\\\\.\\{drive_letter}:'
+            elif re.match(r'^\\\\.\\', clean):
+                target_path = clean
 
         for cand in carved_candidates:
             file_type = cand.get("file_type") or "unknown"

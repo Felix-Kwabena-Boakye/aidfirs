@@ -353,7 +353,12 @@ class EvidenceViewSet(viewsets.ViewSet):
         
         from forensic_api.tsk_wrapper import get_timeline
         target_path = EvidenceViewSet.resolve_evidence_file_path(evidence)
-        result = get_timeline(target_path)
+        offset = request.data.get('offset', '0')
+        try:
+            offset = str(int(offset))
+        except (TypeError, ValueError):
+            offset = '0'
+        result = get_timeline(target_path, partition_offset=offset)
         return Response(result, status=status.HTTP_200_OK if result.get('success') else status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])

@@ -1,4 +1,4 @@
-o#!/usr/bin/env python
+#!/usr/bin/env python
 """backend.forensic_engine.bulk_extractor_parser
 
 Lightweight normalization of Bulk Extractor outputs.

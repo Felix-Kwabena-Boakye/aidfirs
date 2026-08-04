@@ -301,12 +301,25 @@ def get_partitions(image_path):
         if parsing and line.strip():
             parts = re.split(r'\s{2,}', line.strip())
             if len(parts) >= 5:
+                # TSK 4.12+ mmls emits an extra "Table:Entry" column after the slot,
+                # shifting Start/End/Length/Description by one position.
+                # Meta rows print "Meta"/"-------" in that column, so we detect the
+                # presence of the extra column by checking whether parts[1] is not
+                # a pure start-sector integer.
+                legacy = parts[1].isdigit()
+                slot = parts[0]
+                if legacy:
+                    start, end, length = parts[1], parts[2], parts[3]
+                    description = parts[4] if len(parts) > 4 else ""
+                else:
+                    start, end, length = parts[2], parts[3], parts[4]
+                    description = parts[5] if len(parts) > 5 else ""
                 partitions.append({
-                    "slot": parts[0],
-                    "start": parts[1],
-                    "end": parts[2],
-                    "length": parts[3],
-                    "description": parts[4]
+                    "slot": slot,
+                    "start": start,
+                    "end": end,
+                    "length": length,
+                    "description": description
                 })
                 
     return {"success": True, "partitions": partitions, "raw": res["output"], "mock": res.get("mock", False)}
@@ -330,13 +343,17 @@ def list_files(image_path, partition_offset="0"):
         
         # d/d 11:	Documents
         # r/r 12:	passwords.txt
-        match = re.match(r'([a-z\-]+)/([a-z\-]+)\s+(\d+):\s+(.*)', line.strip())
+        # + d/d 517:	100CANON       (recursive fls -r markers)
+        # ++ r/r 1029:	IMG_0044.JPG
+        # r/r 4-128-4:	$AttrDef    (NTFS inode address format)
+        match = re.match(r'^(\s*\+*\s*)?([a-z\-]+)/([a-z\-]+)\s+([0-9]+(?:-[0-9]+-[0-9]+)?):\s+(.*)', line.strip())
         if match:
             files.append({
-                "type": match.group(1),
-                "meta_type": match.group(2),
-                "inode": match.group(3),
-                "name": match.group(4)
+                "type": match.group(2),
+                "meta_type": match.group(3),
+                "inode": match.group(4),
+                "name": match.group(5),
+                "path_depth": line.count('+') if '+' in line else 0
             })
             
     return {"success": True, "files": files, "raw": res["output"], "mock": res.get("mock", False)}
@@ -352,7 +369,7 @@ def extract_file(image_path, inode, output_path, partition_offset="0"):
     if not is_safe_path(output_path):
         return {"success": False, "error": "Output path is not in authorized storage directory"}
     
-    if not str(inode).isalnum() or not str(partition_offset).isdigit():
+    if not re.fullmatch(r'[0-9]+(?:-[0-9]+-[0-9]+)?', str(inode)) or not str(partition_offset).isdigit():
         return {"success": False, "error": "Invalid arguments"}
         
     res = run_command_bytes('icat', ['-o', str(partition_offset), image_path, str(inode)])
@@ -448,12 +465,14 @@ def parse_body_file_to_mactime(body_content):
         
     return "\n".join(formatted_lines)
 
-def get_timeline(image_path):
+def get_timeline(image_path, partition_offset="0"):
     """Run mactime or parse body file to generate a timeline"""
     image_path = os.path.abspath(image_path)
     if image_path.startswith('-'): return {"success": False, "error": "Invalid path"}
+    if not str(partition_offset).isdigit():
+        return {"success": False, "error": "Invalid offset"}
     # 1. fls -m / to generate body file
-    fls_res = run_command('fls', ['-m', '/', '-r', image_path])
+    fls_res = run_command('fls', ['-m', '/', '-r', '-o', str(partition_offset), image_path])
     if not fls_res["success"]: return fls_res
     
     body_content = fls_res["output"]
